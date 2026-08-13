@@ -1,0 +1,15 @@
+{
+  "allow": [
+    "PlotBarChart",
+    "PlotPieChart",
+    "PlotAreaChartWithCorrelation",
+    "PostMessageToConversation",
+    "PostCardToConversation",
+    "ReplyWithMessageToConversation",
+    "ReplyWithCardToConversation",
+    "UpdateCardInConversation",
+    "GetMessagesFromChannel"
+  ],
+  "ask": [],
+  "deny": []
+}

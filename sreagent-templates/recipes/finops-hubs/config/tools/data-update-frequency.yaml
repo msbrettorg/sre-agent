@@ -1,0 +1,29 @@
+api_version: azuresre.ai/v2
+kind: ExtendedAgentTool
+metadata:
+  name: data-update-frequency
+spec:
+  type: KustoTool
+  mode: Query
+  connector: finops-hub-kusto
+  description: "Computes the cadence of Hub cost-data ingestion updates for each billing account by measuring the gaps between\
+    \ consecutive distinct x_IngestionTime values. KPI: Frequency of Data Updates Formula: Data Update Frequency = Time of\
+    \ Latest Cost Update \u2013 Time of Previous Cost Update Author: FinOps toolkit"
+  database: Hub
+  query: |-
+    Costs()
+    | where isnotnull(x_IngestionTime)
+    | extend BillingAccountId = tolower(BillingAccountId)
+    | summarize by BillingAccountId, x_IngestionTime
+    | sort by BillingAccountId asc, x_IngestionTime asc
+    | serialize
+    | extend prev_account = prev(BillingAccountId), prev_t = prev(x_IngestionTime)
+    | extend interval_hours = iff(BillingAccountId == prev_account, todouble((x_IngestionTime - prev_t) / 1h), real(null))
+    | summarize
+        LastUpdate = max(x_IngestionTime),
+        UpdateCount = count(),
+        MedianIntervalHours = todouble(percentile(interval_hours, 50)),
+        P90IntervalHours = todouble(percentile(interval_hours, 90)),
+        MaxIntervalHours = todouble(max(interval_hours))
+        by BillingAccountId
+    | project BillingAccountId, LastUpdate, UpdateCount, MedianIntervalHours, P90IntervalHours, MaxIntervalHours

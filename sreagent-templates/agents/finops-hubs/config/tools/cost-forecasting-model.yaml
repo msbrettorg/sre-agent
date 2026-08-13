@@ -1,0 +1,22 @@
+api_version: azuresre.ai/v2
+kind: ExtendedAgentTool
+metadata:
+  name: cost-forecasting-model
+spec:
+  type: KustoTool
+  mode: Query
+  connector: finops-hub-kusto
+  description: Runs the cost forecasting model FinOps Hub catalog query.
+  database: Hub
+  query: |-
+    let startDate = startofmonth(ago(365d)); // Default: last 12 months
+    let endDate = startofmonth(now());
+    let forecastPeriods = 90;
+    let interval = 1d;
+    Costs()
+    | where ChargePeriodStart >= startDate and ChargePeriodStart < endDate
+    | summarize EffectiveCost = sum(EffectiveCost) by bin(ChargePeriodStart, interval)
+    | make-series EffectiveCostSeries = sum(EffectiveCost) on ChargePeriodStart from startDate to endDate step interval
+    | extend forecast = series_decompose_forecast(EffectiveCostSeries, forecastPeriods)
+    | project ChargePeriodStart, EffectiveCostSeries, forecast
+    // | render timechart

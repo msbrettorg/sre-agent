@@ -1,0 +1,54 @@
+api_version: azuresre.ai/v2
+kind: ExtendedAgentTool
+metadata:
+  name: cost-visibility-delay
+spec:
+  type: KustoTool
+  mode: Query
+  connector: finops-hub-kusto
+  description: "Computes the delay between when cost data was generated and when it became visible in the FinOps Hub. Aggregates\
+    \ median, p90, p99, and max delay by billing account and reporting month in hours and days. KPI: Cost Visibility Delay\
+    \ Formula: Cost Visibility Delay = Time of Displaying Cost \u2013 Time of Cost Generation Author: FinOps toolkit"
+  database: Hub
+  query: |-
+    let startDate = ##startDate##;
+    let endDate = ##endDate##;
+    Costs()
+    | where ChargePeriodStart >= startDate and ChargePeriodStart < endDate
+    | where isnotnull(x_IngestionTime)
+    | extend BillingAccountId = tolower(BillingAccountId)
+    | extend ReportingMonth = startofmonth(ChargePeriodStart)
+    | extend DelayHours = todouble((x_IngestionTime - ChargePeriodEnd) / 1h)
+    | summarize
+        RowCount = count(),
+        P50DelayHours = todouble(percentile(DelayHours, 50)),
+        P90DelayHours = todouble(percentile(DelayHours, 90)),
+        P99DelayHours = todouble(percentile(DelayHours, 99)),
+        MaxDelayHours = todouble(max(DelayHours))
+        by BillingAccountId, ReportingMonth
+    | extend
+        P50DelayDays = todouble(P50DelayHours / 24.0),
+        P90DelayDays = todouble(P90DelayHours / 24.0),
+        P99DelayDays = todouble(P99DelayHours / 24.0),
+        MaxDelayDays = todouble(MaxDelayHours / 24.0)
+    | project
+        BillingAccountId,
+        ReportingMonth,
+        RowCount,
+        P50DelayHours,
+        P90DelayHours,
+        P99DelayHours,
+        MaxDelayHours,
+        P50DelayDays,
+        P90DelayDays,
+        P99DelayDays,
+        MaxDelayDays
+  parameters:
+  - name: startDate
+    type: string
+    description: 'datetime; start date for the reporting period (default: startofmonth(ago(30d)))'
+    required: true
+  - name: endDate
+    type: string
+    description: 'datetime; end date for the reporting period (default: startofmonth(now()))'
+    required: true

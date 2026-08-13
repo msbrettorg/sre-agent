@@ -1,0 +1,130 @@
+api_version: azuresre.ai/v2
+kind: ScheduledTask
+metadata:
+  name: CapacityDailyMonitor
+spec:
+  name: CapacityDailyMonitor
+  description: Daily FinOps capacity management health check — quota usage, CRG utilization, zone capacity
+  schedule: 30 6 * * *
+  mode: Review
+  agent: finops-practitioner
+  prompt: '# Daily FinOps Capacity Management Monitor
+
+
+    ## Phase 0: Preparation
+
+
+    Before starting, search available knowledge and prior memory for relevant context, known issues, and previous findings.
+
+    Output style: Label measured, derived, and estimated evidence; cite each source or derivation; state exact scope and time period; organize findings by FinOps capability; include risk thresholds, confidence, caveats, and required disclaimers.
+
+    Tool routing and delivery guard: This scheduled task is owned by `finops-practitioner`, which has KB-only SearchMemory plus its own Teams delivery tools (`GetMessagesFromChannel`, `PostMessageToConversation`, `ReplyWithMessageToConversation`); it has no Kusto, Azure CLI, Resource Graph, capacity, Outlook, data-collection, or remediation tools. Use the `Task` system tool to invoke specialist subagents for all tool work and pass the full task scope, evidence already collected, open questions, and desired output shape with each `Task` invocation. Use `ftk-database-query` for FinOps Hub Kusto, cost, pricing, recommendation, and transaction query tools. Use `azure-capacity-manager` for capacity, quota, capacity reservation group, SKU availability, database service quota, and benefit recommendation Python tools. Use `ftk-hubs-agent` for FinOps Hub infrastructure health, Resource Graph inventory, data freshness, deployment, remediation, alert and budget deployment, and Advisor suppression operations. Use `chief-financial-officer` only for executive finance framing. For each chart, ask whichever tool-bearing specialist already collected the underlying evidence for that chart (`ftk-database-query` for Kusto/cost evidence, `azure-capacity-manager` for capacity evidence, or `ftk-hubs-agent` for Hub infrastructure evidence) to render it using its own `PlotBarChart`, `PlotPieChart`, or `PlotAreaChartWithCorrelation` tool; do not route a chart to a specialist outside the domain that produced its data. Only `azure-capacity-manager` also has `ExecutePythonCode`; use it only as a fallback chart-generation method within its own capacity-evidence work, never for `ftk-database-query` or `ftk-hubs-agent`, which do not have that tool. Ask each involved specialist to check its own available visualization tools exactly once per run and remember whether `SendOutlookEmail`, `PlotBarChart`, `PlotPieChart`, `PlotAreaChartWithCorrelation`, and, for `azure-capacity-manager` only, `ExecutePythonCode` are present. Do not call notification, email, connector, Microsoft Graph, `dynamicInvoke`, raw webhook, or connector APIs just to test availability. If the specialist that owns the data for a chart has no visualization tool available, provide that data as a chart-ready table or structured specification in the report instead of inventing a tool. Complete the report, and collect any chart artifacts from the specialists, before delivery. `finops-practitioner` delivers the final report to Microsoft Teams itself with its own `PostMessageToConversation` tool; do not delegate Teams delivery to a specialist. When a Teams connector/channel is configured, `finops-practitioner` makes one final `PostMessageToConversation` attempt itself to the configured Teams channel. When an Outlook connector/recipient is configured, ask a tool-bearing specialist involved in this task (`ftk-database-query`, `azure-capacity-manager`, or `ftk-hubs-agent`, all of which have `SendOutlookEmail`) to make one final attempt with the same final report and any generated chart artifacts. If a configured delivery path fails, mark the task/run failed instead of degrading to local output or probing alternate paths. If neither Teams nor Outlook delivery is configured or available, render the completed report in the run output and explicitly state which delivery paths were skipped.
+
+
+
+    Orchestration rule: This scheduled task is owned by `finops-practitioner`. Delegate capacity evidence collection and specialist analysis to `azure-capacity-manager`; do not try to run capacity tools directly from the practitioner. When the specialist returns evidence, assemble the final FinOps report, apply the reporting requirements in this task, generate supported visualizations, and deliver the completed output through configured connectors.
+
+    Ask `azure-capacity-manager` to apply its capacity-management guidance during the `Task` invocation.
+
+
+    This daily check maps Azure capacity health into FinOps Automation, Tools, & Services, Usage Optimization, and Governance, Policy & Risk signals so issues are visible before they block deployments.
+
+    ## Specialist tools to request from `azure-capacity-manager`
+
+    Ask `azure-capacity-manager` to use the following Python tools instead of `az` CLI commands when available. Specialist tools use their configured authentication and the agent system-managed identity where required.
+
+    - `vm-quota-usage`: Run with subscription_id and location to get VM family quota usage with at-risk thresholds
+    - `capacity-reservation-groups`: Run with subscription_id and resource_group when scoped to list CRGs with instanceView utilization
+    - `data-freshness-check`: Run with cluster_uri and database to check Hub data staleness
+    - `non-compute-quotas`: Run with subscription_id and location to get Storage and Network quota usage
+
+
+    ## 1. Quota Health
+
+
+    Ask `azure-capacity-manager` to use `vm-quota-usage` against each active subscription and region to check:
+
+    - VM family quota usage vs limits
+
+    - Flag any family at >80% utilization — these are deployment risks
+
+    - Flag any family at >95% — these are imminent blockers
+
+    - Check quota groups if configured — report group-level headroom
+
+    Ask `azure-capacity-manager` to use `non-compute-quotas` for Storage and Network quota usage so non-compute limits are included in the daily capacity status.
+
+
+
+
+    ## 2. Capacity Reservation Utilization
+
+
+    Ask `azure-capacity-manager` to use `capacity-reservation-groups` for each active CRG:
+
+    - Check reserved vs allocated VM count
+
+    - Flag any CRG where utilization < 50% (paying for unused capacity)
+
+    - Flag any CRG where overallocation exceeds 2x reservation
+
+    - Check zone alignment for shared CRGs
+
+
+
+
+    ## 3. AKS Node Pool Capacity
+
+
+    For AKS clusters with CRG associations:
+
+    - Verify node pool CRG association is still active
+
+    - Check if autoscaler is hitting quota limits
+
+    - Report node pool scale events in last 24 hours
+
+
+
+
+    ## 4. Alert Status
+
+
+    Check for any fired alerts in last 24 hours:
+
+    - Quota threshold alerts
+
+    - Budget alerts
+
+    - Cost anomaly alerts
+
+    Ask `ftk-hubs-agent` to run `data-freshness-check` to verify Hub data health before trusting alert and cost context.
+
+
+
+
+    ## Output
+
+
+    Use #remember to note key findings. Escalate:
+
+    - 🔴 CRITICAL: Any quota at >95% or CRG billing waste >$1000/day
+
+    - 🟡 WARNING: Any quota at >80% or CRG utilization <50%
+
+    - 🟢 HEALTHY: All within thresholds
+
+
+    Do not stop until all checks are complete.
+
+
+    ## Deliver
+
+
+
+    **Visualizations:** Before delivery, ask the tool-bearing specialist already handling that evidence to generate charts for key findings using its own `PlotBarChart`, `PlotPieChart`, or `PlotAreaChartWithCorrelation` tool when those visualization tools fit the data. Only `azure-capacity-manager` also has `ExecutePythonCode`; use it as a fallback chart-generation method only within its own capacity-evidence work, never for `ftk-database-query` or `ftk-hubs-agent`, which do not have that tool. If the specialist handling that evidence has no visualization tool that can express the required chart, provide the underlying data as a chart-ready table or structured specification instead of inventing a tool. Include at minimum one trend chart and one comparison chart where the data supports it. Verify each generated chart non-visually before embedding by checking the output file exists, has non-zero size, opens as an image, and reports expected dimensions and metadata through code interpreter filesystem or image-library checks. Do not use visual inspection as the verification gate; regenerate or omit any chart that fails these checks and state why. Embed the chart images inline in the Teams message and attach or embed them in the Outlook email alongside the text tables. Charts make the report immediately actionable for stakeholders who scan rather than read.
+
+    **Teams and Outlook (status results only):** Post the final daily capacity health check to our Teams channel. Include the overall status (🔴🟡🟢), any critical or warning items, and recommended actions. Do not post intermediate results — only the completed summary. Ask the selected delivery specialist to use `PostMessageToConversation` and `SendOutlookEmail` only when the delivery guard found each tool available once per run. If neither Teams nor Outlook delivery is configured or available, return the completed report in the run output with a note naming the skipped delivery paths. If any configured Teams or Outlook final delivery attempt fails, do not retry or probe alternate delivery paths; mark the task/run failed.
+
+
+    **Knowledge base (operational learnings only):** Save any new operational insights to the knowledge base — Python tool failures, quota API workarounds, CRG query patterns, zone alignment discoveries. Never save financial figures, cost amounts, or any customer financial data to the knowledge base. Financial detail goes to configured Teams and Outlook delivery only.'

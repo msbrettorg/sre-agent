@@ -1,0 +1,1260 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.38.33.27573",
+      "templateHash": "6683992615531130122"
+    }
+  },
+  "parameters": {
+    "agentName": {
+      "type": "string",
+      "metadata": {
+        "description": "Required. Agent name (lowercase, no spaces)."
+      }
+    },
+    "agentResourceGroupName": {
+      "type": "string",
+      "metadata": {
+        "description": "Required. Resource group that holds the agent + its identity + LAW + App Insights. Separate from the RGs the agent monitors."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "eastus2",
+      "allowedValues": [
+        "swedencentral",
+        "uksouth",
+        "eastus2",
+        "australiaeast"
+      ],
+      "metadata": {
+        "description": "Required. Region. Only the regions in @allowed are currently supported by the SRE Agent RP."
+      }
+    },
+    "targetResourceGroups": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Required. Resource groups the agent is granted access to (read or act, depending on accessLevel)."
+      }
+    },
+    "accessLevel": {
+      "type": "string",
+      "defaultValue": "Low",
+      "allowedValues": [
+        "High",
+        "Low"
+      ],
+      "metadata": {
+        "description": "Optional. Low = read-only investigation. High = can take actions on target RGs."
+      }
+    },
+    "actionMode": {
+      "type": "string",
+      "defaultValue": "Review",
+      "allowedValues": [
+        "Review",
+        "Automatic"
+      ],
+      "metadata": {
+        "description": "Optional. Review = human approval before actions. Automatic = agent acts independently."
+      }
+    },
+    "upgradeChannel": {
+      "type": "string",
+      "defaultValue": "Preview",
+      "allowedValues": [
+        "Stable",
+        "Preview"
+      ],
+      "metadata": {
+        "description": "Optional. Upgrade channel for the agent runtime."
+      }
+    },
+    "monthlyAgentUnitLimit": {
+      "type": "int",
+      "defaultValue": 10000,
+      "metadata": {
+        "description": "Optional. Monthly agent unit consumption limit."
+      }
+    },
+    "defaultModelProvider": {
+      "type": "string",
+      "defaultValue": "Anthropic",
+      "metadata": {
+        "description": "Optional. Default LLM provider (MicrosoftFoundry, Anthropic)."
+      }
+    },
+    "defaultModelName": {
+      "type": "string",
+      "defaultValue": "Automatic",
+      "metadata": {
+        "description": "Optional. Default LLM model name."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Optional. Azure resource tags applied to the agent."
+      }
+    },
+    "existingManagedIdentityId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Optional. Resource ID of an existing UAMI. If provided, skips creating a new one."
+      }
+    },
+    "skipRoleAssignments": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Optional. Skip all role assignments. Use on redeploy or when RBAC is pre-configured to avoid RoleAssignmentExists errors."
+      }
+    },
+    "existingAgentAppInsightsId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Optional. Resource ID of an existing Application Insights for agent telemetry. If provided, skips creating a new one."
+      }
+    },
+    "vnetSubnetId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Optional. Full ARM resource ID of a delegated subnet for VNet integration."
+      }
+    },
+    "egressMode": {
+      "type": "string",
+      "defaultValue": "Unrestricted",
+      "metadata": {
+        "description": "Optional. Sandbox egress mode: Unrestricted (default), Limited, or AzureVNet."
+      }
+    },
+    "allowedHosts": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Optional. Additional hosts the sandbox may reach."
+      }
+    },
+    "allowedRegistries": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Optional. Registry catalog IDs (pypi, npmjs, nuget-org) to allow."
+      }
+    },
+    "allowedCodeRepositories": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Optional. Code-repo providers (Github, AzureDevOps) to allow."
+      }
+    },
+    "allowHttpMcpServerNetworkAccess": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Optional. Allow remote HTTP MCP server endpoints in sandbox egress."
+      }
+    },
+    "usePrivateDnsResolution": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Optional. Use VNet private DNS resolver. Only for AzureVNet mode."
+      }
+    },
+    "enableAppInsightsConnector": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Optional. Enable an Application Insights connector. Requires appInsightsResourceId + appInsightsAppId."
+      }
+    },
+    "appInsightsResourceId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Conditional. Required when enableAppInsightsConnector=true. Full Azure resource ID of the App Insights component."
+      }
+    },
+    "appInsightsAppId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Conditional. Required when enableAppInsightsConnector=true. App Insights Application ID (GUID from the Overview blade)."
+      }
+    },
+    "enableLogAnalyticsConnector": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Optional. Enable a Log Analytics connector. Requires lawResourceId."
+      }
+    },
+    "lawResourceId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Conditional. Required when enableLogAnalyticsConnector=true. Full Azure resource ID of the LAW workspace."
+      }
+    },
+    "enableAzureMonitorConnector": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Optional. Enable an Azure Monitor connector that reads alerts at the subscription level."
+      }
+    },
+    "azureMonitorLookbackDays": {
+      "type": "int",
+      "defaultValue": 7,
+      "metadata": {
+        "description": "Optional. Lookback window in days for the Azure Monitor connector."
+      }
+    },
+    "enableDailyHealthCheckTask": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Optional. Enable a daily 8am health summary scheduled task."
+      }
+    },
+    "enableDenyProdDeletesHook": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Optional. Enable a PreToolUse hook that denies delete_*/remove_* tools when the target name contains \"prod\"/\"prd\"."
+      }
+    },
+    "enableSafetyRulesPrompt": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Optional. Enable a \"safety-rules\" common prompt (no restarts without paging on-call, confirm subscription before destructive ops)."
+      }
+    },
+    "enableWebhookBridge": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Optional. Deploy a Logic App that acts as an auth bridge for external webhooks (Dynatrace, Grafana, etc.) that cannot natively acquire Azure AD tokens. Set to true when using httpTriggers with external webhook sources."
+      }
+    },
+    "webhookBridgeTriggerUrl": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Conditional. Required when enableWebhookBridge=true. The SRE Agent HTTP Trigger URL that the Logic App should forward requests to. Obtained from the httpTriggers creation step."
+      }
+    },
+    "subagents": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Optional. Subagent definitions (array). Shape: see parameters.reference.json."
+      }
+    },
+    "tools": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Optional. Tool definitions (KustoTool / HttpClientTool / PythonFunctionTool / LinkTool)."
+      }
+    },
+    "skills": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Optional. Skill definitions (Markdown playbooks bound to tools)."
+      }
+    },
+    "scheduledTasks": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Optional. Scheduled task definitions (cron-triggered runs)."
+      }
+    },
+    "incidentFilters": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Optional. Incident filter definitions (AzMonitor / PagerDuty / ServiceNow rules + handling subagent)."
+      }
+    },
+    "connectors": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Optional. Connector definitions for any kind not covered by toggles above (kusto, mcp, github, azuredevops, teams, outlook, servicenow, pagerduty, grafana) or to override a toggle-generated entry."
+      }
+    },
+    "hooks": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Optional. Hook definitions for any handler beyond the toggles above (additional PreToolUse/Start/Stop entries)."
+      }
+    },
+    "commonPrompts": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Optional. Common prompt definitions for any prompt beyond the toggles above."
+      }
+    },
+    "pluginConfigs": {
+      "type": "array",
+      "defaultValue": [],
+      "metadata": {
+        "description": "Optional. Plugin configuration definitions. Plugin installations themselves are wired via apply-extras.sh."
+      }
+    }
+  },
+  "variables": {
+    "subscriptionId": "[subscription().subscriptionId]",
+    "suffix": "[uniqueString(variables('subscriptionId'), parameters('agentResourceGroupName'), parameters('agentName'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2021-04-01",
+      "name": "[parameters('agentResourceGroupName')]",
+      "location": "[parameters('location')]"
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('core-{0}', uniqueString(deployment().name))]",
+      "resourceGroup": "[parameters('agentResourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "agentName": {
+            "value": "[parameters('agentName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "suffix": {
+            "value": "[variables('suffix')]"
+          },
+          "accessLevel": {
+            "value": "[parameters('accessLevel')]"
+          },
+          "actionMode": {
+            "value": "[parameters('actionMode')]"
+          },
+          "targetResourceGroups": {
+            "value": "[parameters('targetResourceGroups')]"
+          },
+          "subscriptionId": {
+            "value": "[variables('subscriptionId')]"
+          },
+          "upgradeChannel": {
+            "value": "[parameters('upgradeChannel')]"
+          },
+          "monthlyAgentUnitLimit": {
+            "value": "[parameters('monthlyAgentUnitLimit')]"
+          },
+          "defaultModelProvider": {
+            "value": "[parameters('defaultModelProvider')]"
+          },
+          "defaultModelName": {
+            "value": "[parameters('defaultModelName')]"
+          },
+          "tags": {
+            "value": "[parameters('tags')]"
+          },
+          "existingManagedIdentityId": {
+            "value": "[parameters('existingManagedIdentityId')]"
+          },
+          "existingAgentAppInsightsId": {
+            "value": "[parameters('existingAgentAppInsightsId')]"
+          },
+          "skipRoleAssignments": {
+            "value": "[parameters('skipRoleAssignments')]"
+          },
+          "vnetSubnetId": {
+            "value": "[parameters('vnetSubnetId')]"
+          },
+          "egressMode": {
+            "value": "[parameters('egressMode')]"
+          },
+          "allowedHosts": {
+            "value": "[parameters('allowedHosts')]"
+          },
+          "allowedRegistries": {
+            "value": "[parameters('allowedRegistries')]"
+          },
+          "allowedCodeRepositories": {
+            "value": "[parameters('allowedCodeRepositories')]"
+          },
+          "allowHttpMcpServerNetworkAccess": {
+            "value": "[parameters('allowHttpMcpServerNetworkAccess')]"
+          },
+          "usePrivateDnsResolution": {
+            "value": "[parameters('usePrivateDnsResolution')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.38.33.27573",
+              "templateHash": "13136387118770597749"
+            }
+          },
+          "parameters": {
+            "agentName": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "suffix": {
+              "type": "string"
+            },
+            "accessLevel": {
+              "type": "string",
+              "allowedValues": [
+                "High",
+                "Low"
+              ]
+            },
+            "actionMode": {
+              "type": "string",
+              "defaultValue": "Review",
+              "allowedValues": [
+                "Review",
+                "Automatic"
+              ]
+            },
+            "targetResourceGroups": {
+              "type": "array"
+            },
+            "subscriptionId": {
+              "type": "string"
+            },
+            "upgradeChannel": {
+              "type": "string",
+              "defaultValue": "Preview",
+              "allowedValues": [
+                "Stable",
+                "Preview"
+              ]
+            },
+            "monthlyAgentUnitLimit": {
+              "type": "int",
+              "defaultValue": 10000
+            },
+            "defaultModelProvider": {
+              "type": "string",
+              "defaultValue": "MicrosoftFoundry"
+            },
+            "defaultModelName": {
+              "type": "string",
+              "defaultValue": "Automatic"
+            },
+            "tags": {
+              "type": "object",
+              "defaultValue": {}
+            },
+            "existingManagedIdentityId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Optional. Resource ID of an existing User-Assigned Managed Identity. If provided, skips creating a new one."
+              }
+            },
+            "existingAgentAppInsightsId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Optional. Resource ID of an existing Application Insights for agent telemetry. If provided, skips creating a new one."
+              }
+            },
+            "skipRoleAssignments": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Optional. Skip all role assignments. Set to true when RBAC is pre-configured or on redeploy to avoid RoleAssignmentExists errors."
+              }
+            },
+            "vnetSubnetId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Optional. Full ARM resource ID of a delegated subnet (Microsoft.App/environments) for VNet integration. Leave empty for no VNet."
+              }
+            },
+            "egressMode": {
+              "type": "string",
+              "defaultValue": "Unrestricted",
+              "allowedValues": [
+                "Unrestricted",
+                "Limited",
+                "AzureVNet"
+              ],
+              "metadata": {
+                "description": "Optional. Sandbox egress mode: Unrestricted (default), Limited, or AzureVNet."
+              }
+            },
+            "allowedHosts": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Optional. Additional hosts the sandbox may reach (e.g. *.contoso.com). Only used in Limited/AzureVNet modes."
+              }
+            },
+            "allowedRegistries": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Optional. Registry catalog IDs (pypi, npmjs, nuget-org) whose hosts are allowed. Only used in Limited/AzureVNet modes."
+              }
+            },
+            "allowedCodeRepositories": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Optional. Code-repo providers (Github, AzureDevOps) whose hosts are allowed. Only used in Limited/AzureVNet modes."
+              }
+            },
+            "allowHttpMcpServerNetworkAccess": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Optional. Allow remote HTTP MCP server endpoints in sandbox egress."
+              }
+            },
+            "usePrivateDnsResolution": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Optional. Use VNet private DNS resolver instead of platform default. Only for AzureVNet mode."
+              }
+            }
+          },
+          "variables": {
+            "effectiveIdentityId": "[if(empty(parameters('existingManagedIdentityId')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-id-{1}', parameters('agentName'), parameters('suffix'))), parameters('existingManagedIdentityId'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.OperationalInsights/workspaces",
+              "apiVersion": "2023-09-01",
+              "name": "[format('law-{0}', parameters('suffix'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "sku": {
+                  "name": "PerGB2018"
+                },
+                "retentionInDays": 30
+              }
+            },
+            {
+              "condition": "[empty(parameters('existingAgentAppInsightsId'))]",
+              "type": "Microsoft.Insights/components",
+              "apiVersion": "2020-02-02",
+              "name": "[format('ai-{0}', parameters('suffix'))]",
+              "location": "[parameters('location')]",
+              "kind": "web",
+              "properties": {
+                "Application_Type": "web",
+                "Request_Source": "SreAgent",
+                "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', format('law-{0}', parameters('suffix')))]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', format('law-{0}', parameters('suffix')))]"
+              ]
+            },
+            {
+              "condition": "[empty(parameters('existingManagedIdentityId'))]",
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+              "apiVersion": "2024-11-30",
+              "name": "[format('{0}-id-{1}', parameters('agentName'), parameters('suffix'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "isolationScope": "Regional"
+              }
+            },
+            {
+              "condition": "[and(not(parameters('skipRoleAssignments')), empty(parameters('existingManagedIdentityId')))]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(resourceGroup().id, variables('effectiveIdentityId'), '43d0d8ad-25c7-4714-9337-8ba259a9fe05')]",
+              "properties": {
+                "roleDefinitionId": "[resourceId('Microsoft.Authorization/roleDefinitions', '43d0d8ad-25c7-4714-9337-8ba259a9fe05')]",
+                "principalId": "[if(empty(parameters('existingManagedIdentityId')), reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-id-{1}', parameters('agentName'), parameters('suffix'))), '2024-11-30').principalId, reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', split(parameters('existingManagedIdentityId'), '/')[2], split(parameters('existingManagedIdentityId'), '/')[4]), 'Microsoft.ManagedIdentity/userAssignedIdentities', last(split(parameters('existingManagedIdentityId'), '/'))), '2024-11-30').principalId)]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-id-{1}', parameters('agentName'), parameters('suffix')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.App/agents",
+              "apiVersion": "2025-05-01-preview",
+              "name": "[parameters('agentName')]",
+              "location": "[parameters('location')]",
+              "identity": {
+                "type": "SystemAssigned, UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', variables('effectiveIdentityId'))]": {}
+                }
+              },
+              "properties": {
+                "knowledgeGraphConfiguration": {
+                  "copy": [
+                    {
+                      "name": "managedResources",
+                      "count": "[length(parameters('targetResourceGroups'))]",
+                      "input": "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('targetResourceGroups')[copyIndex('managedResources')])]"
+                    }
+                  ],
+                  "identity": "[variables('effectiveIdentityId')]"
+                },
+                "actionConfiguration": {
+                  "accessLevel": "[parameters('accessLevel')]",
+                  "identity": "[variables('effectiveIdentityId')]",
+                  "mode": "[parameters('actionMode')]"
+                },
+                "logConfiguration": {
+                  "applicationInsightsConfiguration": {
+                    "appId": "[if(empty(parameters('existingAgentAppInsightsId')), reference(resourceId('Microsoft.Insights/components', format('ai-{0}', parameters('suffix'))), '2020-02-02').AppId, reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', split(parameters('existingAgentAppInsightsId'), '/')[2], split(parameters('existingAgentAppInsightsId'), '/')[4]), 'Microsoft.Insights/components', last(split(parameters('existingAgentAppInsightsId'), '/'))), '2020-02-02').AppId)]",
+                    "connectionString": "[if(empty(parameters('existingAgentAppInsightsId')), reference(resourceId('Microsoft.Insights/components', format('ai-{0}', parameters('suffix'))), '2020-02-02').ConnectionString, reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', split(parameters('existingAgentAppInsightsId'), '/')[2], split(parameters('existingAgentAppInsightsId'), '/')[4]), 'Microsoft.Insights/components', last(split(parameters('existingAgentAppInsightsId'), '/'))), '2020-02-02').ConnectionString)]"
+                  }
+                },
+                "upgradeChannel": "[parameters('upgradeChannel')]",
+                "monthlyAgentUnitLimit": "[parameters('monthlyAgentUnitLimit')]",
+                "defaultModel": {
+                  "provider": "[parameters('defaultModelProvider')]",
+                  "name": "[parameters('defaultModelName')]"
+                },
+                "experimentalSettings": {
+                  "EnableWorkspaceTools": true,
+                  "EnableHttpTriggers": true,
+                  "EnableV2AgentLoop": true
+                },
+                "vnetConfiguration": "[if(not(empty(parameters('vnetSubnetId'))), createObject('subnetResourceId', parameters('vnetSubnetId')), null())]",
+                "sandboxConfiguration": "[if(not(equals(parameters('egressMode'), 'Unrestricted')), createObject('egress', createObject('mode', parameters('egressMode'), 'allowedHosts', parameters('allowedHosts'), 'allowedRegistries', parameters('allowedRegistries'), 'allowedCodeRepositories', parameters('allowedCodeRepositories'), 'allowHttpMcpServerNetworkAccess', parameters('allowHttpMcpServerNetworkAccess'), 'vnetConfiguration', if(equals(parameters('egressMode'), 'AzureVNet'), createObject('usePrivateDnsResolution', parameters('usePrivateDnsResolution')), null()))), null())]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/components', format('ai-{0}', parameters('suffix')))]",
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-id-{1}', parameters('agentName'), parameters('suffix')))]",
+                "[resourceId('Microsoft.Authorization/roleAssignments', guid(resourceGroup().id, variables('effectiveIdentityId'), '43d0d8ad-25c7-4714-9337-8ba259a9fe05'))]",
+                "targetRbac"
+              ]
+            },
+            {
+              "condition": "[not(parameters('skipRoleAssignments'))]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[format('Microsoft.App/agents/{0}', parameters('agentName'))]",
+              "name": "[guid(resourceId('Microsoft.App/agents', parameters('agentName')), deployer().objectId, 'e79298df-d852-4c6d-84f9-5d13249d1e55')]",
+              "properties": {
+                "roleDefinitionId": "[resourceId('Microsoft.Authorization/roleDefinitions', 'e79298df-d852-4c6d-84f9-5d13249d1e55')]",
+                "principalId": "[deployer().objectId]",
+                "principalType": "User"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.App/agents', parameters('agentName'))]"
+              ]
+            },
+            {
+              "condition": "[not(parameters('skipRoleAssignments'))]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[format('Microsoft.App/agents/{0}', parameters('agentName'))]",
+              "name": "[guid(resourceId('Microsoft.App/agents', parameters('agentName')), variables('effectiveIdentityId'), 'e79298df-d852-4c6d-84f9-5d13249d1e55')]",
+              "properties": {
+                "roleDefinitionId": "[resourceId('Microsoft.Authorization/roleDefinitions', 'e79298df-d852-4c6d-84f9-5d13249d1e55')]",
+                "principalId": "[if(empty(parameters('existingManagedIdentityId')), reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-id-{1}', parameters('agentName'), parameters('suffix'))), '2024-11-30').principalId, reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', split(parameters('existingManagedIdentityId'), '/')[2], split(parameters('existingManagedIdentityId'), '/')[4]), 'Microsoft.ManagedIdentity/userAssignedIdentities', last(split(parameters('existingManagedIdentityId'), '/'))), '2024-11-30').principalId)]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-id-{1}', parameters('agentName'), parameters('suffix')))]",
+                "[resourceId('Microsoft.App/agents', parameters('agentName'))]"
+              ]
+            },
+            {
+              "copy": {
+                "name": "targetRbac",
+                "count": "[length(parameters('targetResourceGroups'))]"
+              },
+              "condition": "[and(not(parameters('skipRoleAssignments')), empty(parameters('existingManagedIdentityId')))]",
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "[format('rbac-{0}-{1}', copyIndex(), uniqueString(deployment().name))]",
+              "subscriptionId": "[parameters('subscriptionId')]",
+              "resourceGroup": "[parameters('targetResourceGroups')[copyIndex()]]",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "principalId": "[if(empty(parameters('existingManagedIdentityId')), createObject('value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-id-{1}', parameters('agentName'), parameters('suffix'))), '2024-11-30').principalId), createObject('value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', split(parameters('existingManagedIdentityId'), '/')[2], split(parameters('existingManagedIdentityId'), '/')[4]), 'Microsoft.ManagedIdentity/userAssignedIdentities', last(split(parameters('existingManagedIdentityId'), '/'))), '2024-11-30').principalId))]",
+                  "accessLevel": {
+                    "value": "[parameters('accessLevel')]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.38.33.27573",
+                      "templateHash": "13017420182860936947"
+                    }
+                  },
+                  "parameters": {
+                    "principalId": {
+                      "type": "string"
+                    },
+                    "accessLevel": {
+                      "type": "string",
+                      "allowedValues": [
+                        "High",
+                        "Low"
+                      ]
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.Authorization/roleAssignments",
+                      "apiVersion": "2022-04-01",
+                      "name": "[guid(resourceGroup().id, parameters('principalId'), 'acdd72a7-3385-48ef-bd42-f606fba81ae7')]",
+                      "properties": {
+                        "roleDefinitionId": "[resourceId('Microsoft.Authorization/roleDefinitions', 'acdd72a7-3385-48ef-bd42-f606fba81ae7')]",
+                        "principalId": "[parameters('principalId')]",
+                        "principalType": "ServicePrincipal"
+                      }
+                    },
+                    {
+                      "type": "Microsoft.Authorization/roleAssignments",
+                      "apiVersion": "2022-04-01",
+                      "name": "[guid(resourceGroup().id, parameters('principalId'), '73c42c96-874c-492b-b04d-ab87d138a893')]",
+                      "properties": {
+                        "roleDefinitionId": "[resourceId('Microsoft.Authorization/roleDefinitions', '73c42c96-874c-492b-b04d-ab87d138a893')]",
+                        "principalId": "[parameters('principalId')]",
+                        "principalType": "ServicePrincipal"
+                      }
+                    },
+                    {
+                      "condition": "[equals(parameters('accessLevel'), 'High')]",
+                      "type": "Microsoft.Authorization/roleAssignments",
+                      "apiVersion": "2022-04-01",
+                      "name": "[guid(resourceGroup().id, parameters('principalId'), 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
+                      "properties": {
+                        "roleDefinitionId": "[resourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
+                        "principalId": "[parameters('principalId')]",
+                        "principalType": "ServicePrincipal"
+                      }
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-id-{1}', parameters('agentName'), parameters('suffix')))]"
+              ]
+            },
+            {
+              "copy": {
+                "name": "targetRbacSystemMi",
+                "count": "[length(parameters('targetResourceGroups'))]"
+              },
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "[format('rbac-smi-{0}-{1}', copyIndex(), uniqueString(deployment().name))]",
+              "subscriptionId": "[parameters('subscriptionId')]",
+              "resourceGroup": "[parameters('targetResourceGroups')[copyIndex()]]",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "principalId": {
+                    "value": "[reference(resourceId('Microsoft.App/agents', parameters('agentName')), '2025-05-01-preview', 'full').identity.principalId]"
+                  },
+                  "accessLevel": {
+                    "value": "[parameters('accessLevel')]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.38.33.27573",
+                      "templateHash": "13017420182860936947"
+                    }
+                  },
+                  "parameters": {
+                    "principalId": {
+                      "type": "string"
+                    },
+                    "accessLevel": {
+                      "type": "string",
+                      "allowedValues": [
+                        "High",
+                        "Low"
+                      ]
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.Authorization/roleAssignments",
+                      "apiVersion": "2022-04-01",
+                      "name": "[guid(resourceGroup().id, parameters('principalId'), 'acdd72a7-3385-48ef-bd42-f606fba81ae7')]",
+                      "properties": {
+                        "roleDefinitionId": "[resourceId('Microsoft.Authorization/roleDefinitions', 'acdd72a7-3385-48ef-bd42-f606fba81ae7')]",
+                        "principalId": "[parameters('principalId')]",
+                        "principalType": "ServicePrincipal"
+                      }
+                    },
+                    {
+                      "type": "Microsoft.Authorization/roleAssignments",
+                      "apiVersion": "2022-04-01",
+                      "name": "[guid(resourceGroup().id, parameters('principalId'), '73c42c96-874c-492b-b04d-ab87d138a893')]",
+                      "properties": {
+                        "roleDefinitionId": "[resourceId('Microsoft.Authorization/roleDefinitions', '73c42c96-874c-492b-b04d-ab87d138a893')]",
+                        "principalId": "[parameters('principalId')]",
+                        "principalType": "ServicePrincipal"
+                      }
+                    },
+                    {
+                      "condition": "[equals(parameters('accessLevel'), 'High')]",
+                      "type": "Microsoft.Authorization/roleAssignments",
+                      "apiVersion": "2022-04-01",
+                      "name": "[guid(resourceGroup().id, parameters('principalId'), 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
+                      "properties": {
+                        "roleDefinitionId": "[resourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
+                        "principalId": "[parameters('principalId')]",
+                        "principalType": "ServicePrincipal"
+                      }
+                    }
+                  ]
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.App/agents', parameters('agentName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "agentId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.App/agents', parameters('agentName'))]"
+            },
+            "agentDataPlaneUrl": {
+              "type": "string",
+              "value": "[format('https://{0}.{1}.azuresre.ai', parameters('agentName'), parameters('location'))]"
+            },
+            "managedIdentityId": {
+              "type": "string",
+              "value": "[variables('effectiveIdentityId')]"
+            },
+            "lawId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.OperationalInsights/workspaces', format('law-{0}', parameters('suffix')))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('agentResourceGroupName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('ext-{0}', uniqueString(deployment().name))]",
+      "resourceGroup": "[parameters('agentResourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "agentName": {
+            "value": "[parameters('agentName')]"
+          },
+          "subagents": {
+            "value": "[parameters('subagents')]"
+          },
+          "tools": {
+            "value": "[parameters('tools')]"
+          },
+          "skills": {
+            "value": "[parameters('skills')]"
+          },
+          "scheduledTasks": {
+            "value": "[parameters('scheduledTasks')]"
+          },
+          "incidentFilters": {
+            "value": "[parameters('incidentFilters')]"
+          },
+          "connectors": {
+            "value": "[parameters('connectors')]"
+          },
+          "hooks": {
+            "value": "[parameters('hooks')]"
+          },
+          "commonPrompts": {
+            "value": "[parameters('commonPrompts')]"
+          },
+          "pluginConfigs": {
+            "value": "[parameters('pluginConfigs')]"
+          },
+          "enableAppInsightsConnector": {
+            "value": "[parameters('enableAppInsightsConnector')]"
+          },
+          "appInsightsResourceId": {
+            "value": "[parameters('appInsightsResourceId')]"
+          },
+          "appInsightsAppId": {
+            "value": "[parameters('appInsightsAppId')]"
+          },
+          "enableLogAnalyticsConnector": {
+            "value": "[parameters('enableLogAnalyticsConnector')]"
+          },
+          "lawResourceId": {
+            "value": "[parameters('lawResourceId')]"
+          },
+          "enableAzureMonitorConnector": {
+            "value": "[parameters('enableAzureMonitorConnector')]"
+          },
+          "azureMonitorLookbackDays": {
+            "value": "[parameters('azureMonitorLookbackDays')]"
+          },
+          "enableDailyHealthCheckTask": {
+            "value": "[parameters('enableDailyHealthCheckTask')]"
+          },
+          "enableDenyProdDeletesHook": {
+            "value": "[parameters('enableDenyProdDeletesHook')]"
+          },
+          "enableSafetyRulesPrompt": {
+            "value": "[parameters('enableSafetyRulesPrompt')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.38.33.27573",
+              "templateHash": "273823993704023992"
+            }
+          },
+          "parameters": {
+            "agentName": {
+              "type": "string"
+            },
+            "subagents": {
+              "type": "array",
+              "defaultValue": []
+            },
+            "tools": {
+              "type": "array",
+              "defaultValue": []
+            },
+            "skills": {
+              "type": "array",
+              "defaultValue": []
+            },
+            "scheduledTasks": {
+              "type": "array",
+              "defaultValue": []
+            },
+            "incidentFilters": {
+              "type": "array",
+              "defaultValue": []
+            },
+            "connectors": {
+              "type": "array",
+              "defaultValue": []
+            },
+            "hooks": {
+              "type": "array",
+              "defaultValue": []
+            },
+            "commonPrompts": {
+              "type": "array",
+              "defaultValue": []
+            },
+            "pluginConfigs": {
+              "type": "array",
+              "defaultValue": []
+            },
+            "enableAppInsightsConnector": {
+              "type": "bool",
+              "defaultValue": false
+            },
+            "appInsightsResourceId": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "appInsightsAppId": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "enableLogAnalyticsConnector": {
+              "type": "bool",
+              "defaultValue": false
+            },
+            "lawResourceId": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "enableAzureMonitorConnector": {
+              "type": "bool",
+              "defaultValue": false
+            },
+            "azureMonitorLookbackDays": {
+              "type": "int",
+              "defaultValue": 7
+            },
+            "enableDailyHealthCheckTask": {
+              "type": "bool",
+              "defaultValue": false
+            },
+            "enableDenyProdDeletesHook": {
+              "type": "bool",
+              "defaultValue": false
+            },
+            "enableSafetyRulesPrompt": {
+              "type": "bool",
+              "defaultValue": false
+            }
+          },
+          "variables": {
+            "builtInConnectors": "[concat(if(parameters('enableAppInsightsConnector'), createArray(createObject('name', 'app-insights', 'properties', createObject('dataConnectorType', 'AppInsights', 'dataSource', parameters('appInsightsResourceId'), 'extendedProperties', createObject('armResourceId', parameters('appInsightsResourceId'), 'resource', createObject('name', if(empty(parameters('appInsightsResourceId')), '', last(split(parameters('appInsightsResourceId'), '/')))), 'appId', parameters('appInsightsAppId')), 'identity', 'system'))), createArray()), if(parameters('enableLogAnalyticsConnector'), createArray(createObject('name', 'log-analytics', 'properties', createObject('dataConnectorType', 'LogAnalytics', 'dataSource', parameters('lawResourceId'), 'extendedProperties', createObject('armResourceId', parameters('lawResourceId'), 'resource', createObject('name', if(empty(parameters('lawResourceId')), '', last(split(parameters('lawResourceId'), '/'))))), 'identity', 'system'))), createArray()), if(parameters('enableAzureMonitorConnector'), createArray(createObject('name', 'azure-monitor', 'properties', createObject('dataConnectorType', 'AzureMonitor', 'dataSource', subscription().id, 'extendedProperties', createObject('armResourceId', subscription().id, 'lookbackDays', parameters('azureMonitorLookbackDays')), 'identity', 'system'))), createArray()))]",
+            "builtInScheduledTasks": "[if(parameters('enableDailyHealthCheckTask'), createArray(createObject('metadata', createObject('name', 'daily-health-check'), 'spec', createObject('description', 'Daily 8am health summary (toggle-generated).', 'schedule', '0 8 * * *', 'prompt', 'Summarize the last 24h of incidents and SLO burn for all services this agent watches.', 'enabled', true(), 'mode', 'Review'))), createArray())]",
+            "builtInHooks": "[if(parameters('enableDenyProdDeletesHook'), createArray(createObject('metadata', createObject('name', 'deny-prod-deletes'), 'spec', createObject('eventType', 'PreToolUse', 'hookType', 'Prompt', 'matcher', createObject('toolPattern', '^(delete_|remove_).*'), 'permissionDecision', 'deny', 'hookBody', createObject('prompt', 'If the tool targets a production resource (name contains \"prod\" or \"prd\"), deny. Otherwise allow.'), 'enabled', true()))), createArray())]",
+            "builtInCommonPrompts": "[if(parameters('enableSafetyRulesPrompt'), createArray(createObject('metadata', createObject('name', 'safety-rules'), 'spec', createObject('prompt', '## Safety rules\n\n- Never restart services without paging the on-call.\n- Always confirm subscription before destructive ops.\n- For any High accessLevel action, require human review even if actionMode=Automatic.'))), createArray())]",
+            "allConnectors": "[concat(variables('builtInConnectors'), parameters('connectors'))]",
+            "allScheduledTasks": "[concat(variables('builtInScheduledTasks'), parameters('scheduledTasks'))]",
+            "allHooks": "[concat(variables('builtInHooks'), parameters('hooks'))]",
+            "allCommonPrompts": "[concat(variables('builtInCommonPrompts'), parameters('commonPrompts'))]"
+          },
+          "resources": [
+            {
+              "copy": {
+                "name": "connectorRes",
+                "count": "[length(variables('allConnectors'))]",
+                "mode": "serial",
+                "batchSize": 1
+              },
+              "type": "Microsoft.App/agents/connectors",
+              "apiVersion": "2025-05-01-preview",
+              "name": "[format('{0}/{1}', parameters('agentName'), variables('allConnectors')[copyIndex()].name)]",
+              "properties": "[variables('allConnectors')[copyIndex()].properties]"
+            }
+          ],
+          "outputs": {
+            "pendingHooks": {
+              "type": "array",
+              "value": "[variables('allHooks')]"
+            },
+            "pendingPluginConfigs": {
+              "type": "array",
+              "value": "[parameters('pluginConfigs')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('agentResourceGroupName')), 'Microsoft.Resources/deployments', format('core-{0}', uniqueString(deployment().name)))]",
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('agentResourceGroupName'))]"
+      ]
+    },
+    {
+      "condition": "[and(parameters('enableWebhookBridge'), not(empty(parameters('webhookBridgeTriggerUrl'))))]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('bridge-{0}', uniqueString(deployment().name))]",
+      "resourceGroup": "[parameters('agentResourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "agentName": {
+            "value": "[parameters('agentName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "triggerUrl": {
+            "value": "[parameters('webhookBridgeTriggerUrl')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.38.33.27573",
+              "templateHash": "14105745535565520869"
+            }
+          },
+          "parameters": {
+            "agentName": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "triggerUrl": {
+              "type": "string",
+              "metadata": {
+                "description": "The SRE Agent HTTP Trigger URL to forward requests to."
+              }
+            }
+          },
+          "variables": {
+            "sreAgentAdminRoleId": "e79298df-d852-4c6d-84f9-5d13249d1e55"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Logic/workflows",
+              "apiVersion": "2019-05-01",
+              "name": "[format('{0}-webhook-bridge', parameters('agentName'))]",
+              "location": "[parameters('location')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "state": "Enabled",
+                "definition": {
+                  "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                  "contentVersion": "1.0.0.0",
+                  "triggers": {
+                    "incoming_webhook": {
+                      "type": "Request",
+                      "kind": "Http",
+                      "inputs": {
+                        "schema": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  },
+                  "actions": {
+                    "forward_to_sre_agent": {
+                      "type": "Http",
+                      "runAfter": {},
+                      "inputs": {
+                        "method": "POST",
+                        "uri": "[parameters('triggerUrl')]",
+                        "headers": {
+                          "Content-Type": "application/json"
+                        },
+                        "body": "@triggerBody()",
+                        "authentication": {
+                          "type": "ManagedServiceIdentity",
+                          "audience": "https://azuresre.dev"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[format('Microsoft.App/agents/{0}', parameters('agentName'))]",
+              "name": "[guid(resourceId('Microsoft.App/agents', parameters('agentName')), resourceId('Microsoft.Logic/workflows', format('{0}-webhook-bridge', parameters('agentName'))), variables('sreAgentAdminRoleId'))]",
+              "properties": {
+                "principalId": "[reference(resourceId('Microsoft.Logic/workflows', format('{0}-webhook-bridge', parameters('agentName'))), '2019-05-01', 'full').identity.principalId]",
+                "principalType": "ServicePrincipal",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('sreAgentAdminRoleId'))]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Logic/workflows', format('{0}-webhook-bridge', parameters('agentName')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "logicAppName": {
+              "type": "string",
+              "value": "[format('{0}-webhook-bridge', parameters('agentName'))]"
+            },
+            "logicAppPrincipalId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Logic/workflows', format('{0}-webhook-bridge', parameters('agentName'))), '2019-05-01', 'full').identity.principalId]"
+            },
+            "logicAppCallbackUrl": {
+              "type": "string",
+              "value": "[listCallbackUrl(resourceId('Microsoft.Logic/workflows/triggers', format('{0}-webhook-bridge', parameters('agentName')), 'incoming_webhook'), '2019-05-01').value]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('agentResourceGroupName')), 'Microsoft.Resources/deployments', format('core-{0}', uniqueString(deployment().name)))]",
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('agentResourceGroupName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "agentId": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('agentResourceGroupName')), 'Microsoft.Resources/deployments', format('core-{0}', uniqueString(deployment().name))), '2025-04-01').outputs.agentId.value]"
+    },
+    "agentDataPlaneUrl": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('agentResourceGroupName')), 'Microsoft.Resources/deployments', format('core-{0}', uniqueString(deployment().name))), '2025-04-01').outputs.agentDataPlaneUrl.value]"
+    },
+    "managedIdentityId": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('agentResourceGroupName')), 'Microsoft.Resources/deployments', format('core-{0}', uniqueString(deployment().name))), '2025-04-01').outputs.managedIdentityId.value]"
+    },
+    "lawId": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('agentResourceGroupName')), 'Microsoft.Resources/deployments', format('core-{0}', uniqueString(deployment().name))), '2025-04-01').outputs.lawId.value]"
+    },
+    "agentPortalUrl": {
+      "type": "string",
+      "value": "[format('https://sre.azure.com/#/agent/{0}/{1}/{2}', subscription().subscriptionId, parameters('agentResourceGroupName'), parameters('agentName'))]"
+    },
+    "resourceGroupPortalUrl": {
+      "type": "string",
+      "value": "[format('https://portal.azure.com/#@/resource/subscriptions/{0}/resourceGroups/{1}/overview', subscription().subscriptionId, parameters('agentResourceGroupName'))]"
+    },
+    "pendingHooks": {
+      "type": "array",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('agentResourceGroupName')), 'Microsoft.Resources/deployments', format('ext-{0}', uniqueString(deployment().name))), '2025-04-01').outputs.pendingHooks.value]"
+    },
+    "pendingPluginConfigs": {
+      "type": "array",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('agentResourceGroupName')), 'Microsoft.Resources/deployments', format('ext-{0}', uniqueString(deployment().name))), '2025-04-01').outputs.pendingPluginConfigs.value]"
+    },
+    "webhookBridgeUrl": {
+      "type": "string",
+      "value": "[if(and(parameters('enableWebhookBridge'), not(empty(parameters('webhookBridgeTriggerUrl')))), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('agentResourceGroupName')), 'Microsoft.Resources/deployments', format('bridge-{0}', uniqueString(deployment().name))), '2025-04-01').outputs.logicAppCallbackUrl.value, '')]"
+    }
+  }
+}

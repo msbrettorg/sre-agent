@@ -1,0 +1,42 @@
+api_version: azuresre.ai/v2
+kind: ExtendedAgentTool
+metadata:
+  name: compute-cost-per-core
+spec:
+  type: KustoTool
+  mode: Query
+  connector: finops-hub-kusto
+  description: 'Computes two compute-efficiency KPIs from FinOps Hub cost records in one pass over Costs(). It summarizes
+    compute usage cost, unused commitment cost, and computed core-hours by billing currency. KPI: Effective Average Compute
+    Cost per Core; Hourly Cost per CPU Core Formula: HourlyCostPerCore = sum(EffectiveCost for compute usage rows) / sum(x_ConsumedCoreHours
+    for compute usage rows) EffectiveAverageCostPerCore = (sum(EffectiveCost for compute usage rows) + sum(EffectiveCost where
+    CommitmentDiscountStatus==''Unused'' AND isnotempty(CommitmentDiscountCategory))) / sum(x_ConsumedCoreHours for compute
+    usage rows) Author: FinOps toolkit'
+  database: Hub
+  query: |-
+    let startDate = ##startDate##;
+    let endDate = ##endDate##;
+    Costs()
+    | where ChargePeriodStart >= startDate and ChargePeriodStart < endDate
+    | where not(ChargeCategory == 'Purchase' and isnotempty(CommitmentDiscountCategory))
+    | extend tmp_IsVMUsage            = x_SkuMeterCategory in ('Virtual Machines', 'Virtual Machine Licenses') and ChargeCategory == 'Usage'
+    | extend tmp_IsComputeCommitment  = x_SkuMeterCategory in ('Virtual Machines', 'Virtual Machine Licenses')
+    | extend x_SkuCoreCount           = iff(tmp_IsVMUsage, toint(coalesce(x_SkuDetails.VCPUs, x_SkuDetails.vCores)), toint(''))
+    | extend x_ConsumedCoreHours      = iff(tmp_IsVMUsage and isnotempty(x_SkuCoreCount), toreal(x_SkuCoreCount * ConsumedQuantity), toreal(''))
+    | summarize
+        ComputeUsageEffectiveCost = todouble(sumif(EffectiveCost, tmp_IsVMUsage)),
+        UnusedCommitmentCost = todouble(sumif(EffectiveCost, CommitmentDiscountStatus == 'Unused' and isnotempty(CommitmentDiscountCategory) and tmp_IsComputeCommitment)),
+        TotalCoreHours = todouble(sum(x_ConsumedCoreHours))
+        by BillingCurrency
+    | extend HourlyCostPerCore = todouble(iff(isnull(TotalCoreHours) or TotalCoreHours == 0.0, 0.0, ComputeUsageEffectiveCost / TotalCoreHours))
+    | extend EffectiveAverageCostPerCore = todouble(iff(isnull(TotalCoreHours) or TotalCoreHours == 0.0, 0.0, (ComputeUsageEffectiveCost + UnusedCommitmentCost) / TotalCoreHours))
+    | project BillingCurrency, ComputeUsageEffectiveCost, UnusedCommitmentCost, TotalCoreHours, HourlyCostPerCore, EffectiveAverageCostPerCore
+  parameters:
+  - name: startDate
+    type: string
+    description: 'datetime; start of the reporting period (default: startofmonth(ago(30d)))'
+    required: true
+  - name: endDate
+    type: string
+    description: 'datetime; end of the reporting period, exclusive (default: startofmonth(now()))'
+    required: true

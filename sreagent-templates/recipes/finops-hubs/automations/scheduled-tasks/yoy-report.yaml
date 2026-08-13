@@ -1,0 +1,199 @@
+api_version: azuresre.ai/v2
+kind: ScheduledTask
+metadata:
+  name: Semiannual
+spec:
+  name: Semiannual
+  description: Semiannual year-over-year financial analysis for January and July close checkpoints
+  schedule: 0 9 5 1,7 *
+  mode: Review
+  agent: finops-practitioner
+  prompt: '# Semiannual Financial Analysis
+
+    ---
+    **FISCAL YEAR CONFIGURATION:**
+
+    This task is configured for a **July–June fiscal year** (the Microsoft fiscal calendar) as a worked example. If your organization uses a different fiscal year, customize the following elements to match your fiscal calendar:
+
+    1. **Cron schedule** (line 8): Adjust `0 9 5 1,7 *` to run at your mid-year and year-end close dates
+    2. **Fiscal period logic** (line 28): Update "July through June", "January 5 and July 5", and period-comparison statements
+    3. **Forecast targets** (lines 87, 145): Adjust "June 30" and checkpoint dates to align with your fiscal year end and mid-year close
+
+    The analysis logic below assumes July–June periods as the default example. Adapt month references and comparison windows to your fiscal calendar before deploying.
+
+    ---
+
+
+    ## Phase 0: Preparation
+
+
+    Before starting, search available knowledge and prior memory for relevant context, known issues, and previous findings.
+
+    Output style: Label measured, derived, and estimated evidence; cite each source or derivation; state exact scope and time period; organize findings by FinOps capability; include risk thresholds, confidence, caveats, and required disclaimers.
+
+    Tool routing and delivery guard: This scheduled task is owned by `finops-practitioner`, which has KB-only SearchMemory plus its own Teams delivery tools (`GetMessagesFromChannel`, `PostMessageToConversation`, `ReplyWithMessageToConversation`); it has no Kusto, Azure CLI, Resource Graph, capacity, Outlook, data-collection, or remediation tools. Use the `Task` system tool to invoke specialist subagents for all tool work and pass the full task scope, evidence already collected, open questions, and desired output shape with each `Task` invocation. Use `ftk-database-query` for FinOps Hub Kusto, cost, pricing, recommendation, and transaction query tools. Use `azure-capacity-manager` for capacity, quota, capacity reservation group, SKU availability, database service quota, and benefit recommendation Python tools. Use `ftk-hubs-agent` for FinOps Hub infrastructure health, Resource Graph inventory, data freshness, deployment, remediation, alert and budget deployment, and Advisor suppression operations. Use `chief-financial-officer` only for executive finance framing. For each chart, ask whichever tool-bearing specialist already collected the underlying evidence for that chart (`ftk-database-query` for Kusto/cost evidence, `azure-capacity-manager` for capacity evidence, or `ftk-hubs-agent` for Hub infrastructure evidence) to render it using its own `PlotBarChart`, `PlotPieChart`, or `PlotAreaChartWithCorrelation` tool; do not route a chart to a specialist outside the domain that produced its data. Only `azure-capacity-manager` also has `ExecutePythonCode`; use it only as a fallback chart-generation method within its own capacity-evidence work, never for `ftk-database-query` or `ftk-hubs-agent`, which do not have that tool. Ask each involved specialist to check its own available visualization tools exactly once per run and remember whether `SendOutlookEmail`, `PlotBarChart`, `PlotPieChart`, `PlotAreaChartWithCorrelation`, and, for `azure-capacity-manager` only, `ExecutePythonCode` are present. Do not call notification, email, connector, Microsoft Graph, `dynamicInvoke`, raw webhook, or connector APIs just to test availability. If the specialist that owns the data for a chart has no visualization tool available, provide that data as a chart-ready table or structured specification in the report instead of inventing a tool. Complete the report, and collect any chart artifacts from the specialists, before delivery. `finops-practitioner` delivers the final report to Microsoft Teams itself with its own `PostMessageToConversation` tool; do not delegate Teams delivery to a specialist. When a Teams connector/channel is configured, `finops-practitioner` makes one final `PostMessageToConversation` attempt itself to the configured Teams channel. When an Outlook connector/recipient is configured, ask a tool-bearing specialist involved in this task (`ftk-database-query`, `azure-capacity-manager`, or `ftk-hubs-agent`, all of which have `SendOutlookEmail`) to make one final attempt with the same final report and any generated chart artifacts. If a configured delivery path fails, mark the task/run failed instead of degrading to local output or probing alternate paths. If neither Teams nor Outlook delivery is configured or available, render the completed report in the run output and explicitly state which delivery paths were skipped.
+
+
+
+     Lead this as the FinOps practitioner. Delegate all FinOps Hub Kusto evidence collection to `ftk-database-query`, delegate capacity-risk evidence to `azure-capacity-manager`, and consult `chief-financial-officer` for fiscal planning, executive framing, and commitment-risk recommendations.
+
+
+    **Fiscal period assumptions (default: July–June fiscal year):** This task runs at mid-year and year-end close checkpoints. For a July–June fiscal year, that means January 5 and July 5. On the January checkpoint, compare the completed first-half period (July–December) against the same period in the prior fiscal year and forecast through the fiscal year end (June 30). On the July checkpoint, compare the just-completed fiscal year (July–June) against the previous fiscal year and prepare the next fiscal year planning view. Adjust these month references if your organization uses a different fiscal calendar (see configuration note above).
+
+    ## Specialist evidence requests for this task
+
+    Do not run Kusto tools directly. Ask `ftk-database-query` to run fiscal cost, pricing, savings, recommendation, and transaction tools. Ask `azure-capacity-manager` to run `benefit-recommendations` and ask `ftk-hubs-agent` to run `resource-graph-query` where non-Kusto Azure Cost Management or resource-inventory evidence is needed.
+
+    - `azure-capacity-manager`: Run `benefit-recommendations` with billing_scope and lookback to get reservation and savings plan recommendations
+    - `ftk-hubs-agent`: Run `data-freshness-check` with cluster_uri and database to check Hub data freshness
+    - `ftk-hubs-agent`: Run `resource-graph-query` with query and subscriptions to execute Azure Resource Graph KQL
+
+
+    ## Phase 1: Data Collection
+
+
+    ### 1.1 Verify Connectivity
+
+    Ask `ftk-hubs-agent` to run `data-freshness-check` with the FinOps Hub cluster URI and Hub database. Treat its direct REST `Costs()` latest data date as the authoritative freshness source and mark any conflicting stale-memory, raw-KQL, or ingestion timestamp conclusion as superseded and unsafe. Proceed if latest `Costs()` data is 3 days old or newer. Do not ask for `costs-enriched-base` for freshness checks or fiscal-period reports; use aggregated Kusto tools for complete-month reporting windows and reserve row-level detail for one-day drill-downs only.
+
+
+    ### 1.2 Year-over-year trends
+
+    Ask `ftk-database-query` to run `monthly-cost-trend` with startDate set to the start of the prior comparison period. Get month-by-month billed and effective cost for the current comparison period and the same prior-year period.
+
+
+    ### 1.3 Service Portfolio Analysis
+
+    Ask `ftk-database-query` to run `top-services-by-cost` with N=20 for the current comparison period and the prior-year comparison period. Identify the top services driving year-over-year spend changes.
+
+
+    ### 1.4 Quarterly Resource Group Trends
+
+    Ask `ftk-database-query` to run `quarterly-cost-by-resource-group` with N=10, covering the current and prior-year comparison periods. Identify quarterly growth patterns and material resource-group shifts.
+
+
+    ### 1.5 Fiscal Year Anomalies
+
+    Ask `ftk-database-query` to run `cost-anomaly-detection` across the current and prior-year comparison periods. Use deep investigation on any significant anomalies or year-over-year discontinuities.
+
+
+    ### 1.6 Savings Realization
+
+    Ask `ftk-database-query` to run `savings-summary-report` for the current and prior-year comparison periods. Calculate ESR, total savings, and year-over-year savings movement.
+
+
+    ### 1.7 Commitment Performance
+
+    Ask `ftk-database-query` to run `commitment-discount-utilization` for the current and prior-year comparison periods. Assess how commitment purchases changed year over year.
+
+
+    ### 1.8 Financial Hierarchy
+
+    Ask `ftk-database-query` to run `cost-by-financial-hierarchy` with N=10 for the current and prior-year comparison periods. Understand cost allocation across billing profiles, teams, and applications.
+
+
+    **Checkpoint:** Confirm year-over-year comparison data collection is complete.
+
+
+    ### 1.9 Forecast
+
+    Ask `ftk-database-query` to run `cost-forecasting-model` using the current comparison period as actuals and enough historical data to project the next fiscal checkpoint. For the mid-year checkpoint, forecast through fiscal year end (e.g., June 30 for a July–June fiscal year). For the year-end checkpoint, forecast the next fiscal year planning baseline.
+
+
+    ### 1.10 Reservation Recommendations
+
+    Ask `azure-capacity-manager` to run `benefit-recommendations` and ask `ftk-database-query` to run `reservation-recommendation-breakdown`. Identify commitments that could save money before fiscal year end.
+
+
+    ### 1.11 Regional Analysis
+
+    Ask `ftk-database-query` to run `cost-by-region-trend` for the current and prior-year comparison periods. Identify regional cost shifts.
+
+
+    ### 1.12 Resource Type Efficiency
+
+    Ask `ftk-hubs-agent` to run `resource-graph-query` for current Azure resource inventory, then ask `ftk-database-query` to run `top-resource-types-by-cost` with N=20 for the current and prior-year comparison periods. Track resource type evolution.
+
+
+    ### 1.13 Price Benchmarking
+
+    Ask `ftk-database-query` to run `service-price-benchmarking` for the current and prior-year comparison periods. Benchmark pricing effectiveness year over year.
+
+
+    ### 1.14 Month-over-Month Volatility
+
+    Ask `ftk-database-query` to run `monthly-cost-change-percentage` covering both comparison periods. Identify the most volatile months and distinguish month-over-month volatility from true year-over-year movement.
+
+
+    ### 1.15 Commitment Transactions
+
+    Ask `ftk-database-query` to run `top-commitment-transactions` with N=20 for the current and prior-year comparison periods. Track major RI/SP purchases. If it returns zero rows or `ZERO_ROWS_RETURNED`, ask `ftk-hubs-agent` to run `data-freshness-check` and report whether `Transactions()` has the `TRANSACTIONS_ZERO_ROWS` diagnostic. Do not conclude there were no commitment purchases until the export, ingestion, and stored-function diagnostic is clear.
+
+
+    ### 1.16 Other Transactions
+
+    Ask `ftk-database-query` to run `top-other-transactions` with N=20 for the current and prior-year comparison periods. If it returns zero rows or `ZERO_ROWS_RETURNED`, ask `ftk-hubs-agent` to run `data-freshness-check` and report whether `Transactions()` has the `TRANSACTIONS_ZERO_ROWS` diagnostic. Do not conclude there were no non-usage spend patterns until the export, ingestion, and stored-function diagnostic is clear.
+
+
+    ### 1.17 Fiscal FinOps KPI Scorecard
+
+    Ask `ftk-database-query` to run the full FinOps KPI tool set from `src/queries/KPI.md` for the current fiscal comparison period and, where the query supports date windows, the prior-year comparison period: `percentage-unallocated-costs`, `percentage-untagged-costs`, `tagging-policy-compliance`, `allocation-accuracy-index`, `anomaly-detection-rate`, `anomaly-variance-total`, `monthly-cost-trend`, `cost-visibility-delay`, `data-update-frequency`, `macc-consumption-vs-commitment`, `ai-token-usage-breakdown`, `ai-daily-trend`, `ai-model-cost-comparison`, `commitment-utilization-score`, `compute-cost-per-core`, `savings-summary-report`, `compute-spend-commitment-coverage`, `commitment-discount-waste`, `cost-optimization-index`, `storage-tier-distribution`, and `cost-per-gb-stored`.
+
+    Build the year-over-year KPI scorecard from those outputs. Separate direct KPI measurements from derived executive interpretation, and classify unavailable KPI rows as data sufficiency limitations with the exact source tool named.
+
+
+    **Checkpoint:** ALL data collected. Proceed to strategic analysis.
+
+
+    ## Phase 2: Strategic Analysis
+
+
+    ### 2.1 Year-over-year scorecard
+
+    Grade year-over-year performance (A+ to F) across: cost management, savings realization, commitment coverage, tag compliance, forecast accuracy, and forecast risk.
+
+
+    ### 2.2 Forecast
+
+    For mid-year checkpoint runs, project total fiscal year spend with Conservative/Expected/Optimistic scenarios and compare to annual budget. For year-end checkpoint runs, create the next fiscal year planning baseline.
+
+
+    ### 2.3 Savings opportunities
+
+    Identify quick-win optimization opportunities that can reduce costs before the next fiscal checkpoint. Prioritize by days remaining and implementation effort.
+
+
+    ### 2.4 Fiscal planning
+
+    Based on year-over-year trends, recommend budget changes, commitment purchase strategy, and optimization roadmap.
+
+
+    ### 2.5 Detailed Findings
+
+    7 sections: Cost Analysis, Savings Analysis, Optimization, Governance, Market Positioning, Temporal Themes, Implementation Roadmap.
+
+
+    ### 2.6 Recommendations
+
+    Prioritized actions: before the next fiscal checkpoint, next half-year, and next full fiscal year. Dollar amounts and owners for each.
+
+
+    ## Phase 3: Report
+
+
+    Professional executive report with tables, charts, emoji indicators. Include year-over-year variance, fiscal timeline, forecast scenarios, grade card, and planning recommendations.
+
+
+    Do not stop or yield until the report is complete and ready for the FinOps team.
+
+
+    ## Phase 4: Deliver
+
+
+
+    **Visualizations:** Before delivery, ask the tool-bearing specialist already handling that evidence to generate charts for key findings using its own `PlotBarChart`, `PlotPieChart`, or `PlotAreaChartWithCorrelation` tool when those visualization tools fit the data. Only `azure-capacity-manager` also has `ExecutePythonCode`; use it as a fallback chart-generation method only within its own capacity-evidence work, never for `ftk-database-query` or `ftk-hubs-agent`, which do not have that tool. If the specialist handling that evidence has no visualization tool that can express the required chart, provide the underlying data as a chart-ready table or structured specification instead of inventing a tool. Include at minimum one trend chart and one comparison chart where the data supports it. Verify each generated chart non-visually before embedding by checking the output file exists, has non-zero size, opens as an image, and reports expected dimensions and metadata through code interpreter filesystem or image-library checks. Do not use visual inspection as the verification gate; regenerate or omit any chart that fails these checks and state why. Embed the chart images inline in the Teams message and attach or embed them in the Outlook email alongside the text tables. Charts make the report immediately actionable for stakeholders who scan rather than read.
+
+    **Teams and Outlook (financial results only):** Post the final report to our Teams channel. Include the year-over-year scorecard, forecast scenarios, and planning recommendations. Do not post intermediate results — only the completed report. Ask the selected delivery specialist to use `PostMessageToConversation` and `SendOutlookEmail` only when the delivery guard found each tool available once per run. If neither Teams nor Outlook delivery is configured or available, return the completed report in the run output with a note naming the skipped delivery paths. If any configured Teams or Outlook final delivery attempt fails, do not retry or probe alternate delivery paths; mark the task/run failed.
+
+
+    **Knowledge base (operational learnings only):** Save any new operational insights to the knowledge base — tool errors encountered, workarounds discovered, data quality observations, query patterns that worked or failed. Never save financial figures, cost amounts, savings numbers, or any customer financial data to the knowledge base. Financial detail goes to configured Teams and Outlook delivery only.'

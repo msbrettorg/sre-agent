@@ -1,0 +1,31 @@
+api_version: azuresre.ai/v2
+kind: ExtendedAgentTool
+metadata:
+  name: cost-per-gb-stored
+spec:
+  type: KustoTool
+  mode: Query
+  connector: finops-hub-kusto
+  description: 'Computes the period-average storage cost per normalized GB-month for storage usage rows. It summarizes amortized
+    storage cost and normalized storage consumption by billing currency. KPI: Cost per Gigabytes Stored Formula: Cloud Storage
+    Costs / Number of GB stored Author: FinOps toolkit'
+  database: Hub
+  query: "let startDate = ##startDate##;\nlet endDate = ##endDate##;\nCosts()\n| where ChargePeriodStart >= startDate and\
+    \ ChargePeriodStart < endDate\n| where ServiceCategory == 'Storage' and ChargeCategory == 'Usage'\n| where not(ChargeCategory\
+    \ == 'Purchase' and isnotempty(CommitmentDiscountCategory))\n| extend x_NormalizedGB = case(\n    ConsumedUnit endswith\
+    \ 'TB', todouble(ConsumedQuantity) * 1024.0,\n    ConsumedUnit endswith 'PB', todouble(ConsumedQuantity) * 1048576.0,\n\
+    \    ConsumedUnit endswith 'MB', todouble(ConsumedQuantity) / 1024.0,\n    todouble(ConsumedQuantity)\n)\n| extend ConsumedUnitBucket\
+    \ = case(\n    ConsumedUnit endswith 'TB', 'TB\u2192GB (\xD71024)',\n    ConsumedUnit endswith 'PB', 'PB\u2192GB (\xD7\
+    1048576)',\n    ConsumedUnit endswith 'MB', 'MB\u2192GB (\xF71024)',\n    'GB (pass-through)'\n)\n| summarize\n    TotalStorageCost\
+    \ = todouble(sum(EffectiveCost)),\n    TotalGBMonths = todouble(sum(x_NormalizedGB))\n    by BillingCurrency\n| extend\
+    \ CostPerGBMonth = todouble(iff(TotalGBMonths == 0.0 or isnull(TotalGBMonths), todouble(0), TotalStorageCost / TotalGBMonths))\n\
+    | project BillingCurrency, TotalStorageCost, TotalGBMonths, CostPerGBMonth"
+  parameters:
+  - name: startDate
+    type: string
+    description: 'datetime (default: startofmonth(ago(30d))) - Start date for the reporting period'
+    required: true
+  - name: endDate
+    type: string
+    description: 'datetime (default: startofmonth(now())) - End date for the reporting period'
+    required: true

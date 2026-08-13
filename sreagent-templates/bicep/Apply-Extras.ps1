@@ -677,41 +677,102 @@ $knowledgeItems = $extras.knowledgeItems
 $kiCount = ($knowledgeItems | Measure-Object).Count
 if ($kiCount -gt 0) {
     if ($dpTokenAvailable) {
-        Write-Host "knowledgeItems: $kiCount file(s) -> Knowledge Sources (data-plane)"
+        Write-Host "knowledgeItems: $kiCount item(s) -> Knowledge Sources (data-plane)"
+        $knowledgeItemsFailed = $false
         for ($i = 0; $i -lt $kiCount; $i++) {
             $ki = $knowledgeItems[$i]
             $fname = $ki.name
-            $content = $ki.content
-            if ([string]::IsNullOrEmpty($content)) {
-                Write-Host "  skip $fname (no content)"
-                continue
+            $itemType = if ($ki.dataConnectorType) {
+                $ki.dataConnectorType
+            } elseif ($ki.properties.dataConnectorType) {
+                $ki.properties.dataConnectorType
+            } elseif ($ki.type) {
+                $ki.type
+            } else {
+                "KnowledgeFile"
             }
-            $sanitized = ($fname.ToLower() -replace '[^a-z0-9-]', '-') -replace '-+', '-' -replace '^-|-$', ''
-            $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($content))
-            $ctype = switch -Regex ($fname) {
-                '\.md$'   { "text/markdown" }
-                '\.txt$'  { "text/plain" }
-                '\.pdf$'  { "application/pdf" }
-                '\.json$' { "application/json" }
-                default   { "application/octet-stream" }
-            }
-            $body = @{
-                name       = $sanitized
-                type       = "KnowledgeItem"
-                tags       = @()
-                properties = @{
-                    dataConnectorType  = "KnowledgeFile"
-                    dataSource         = $sanitized
-                    extendedProperties = @{
-                        displayName = $fname
-                        fileName    = $fname
-                        fileContent = $b64
-                        contentType = $ctype
-                    }
+
+            $itemName = $fname
+            if ($itemType -eq "KnowledgeWebPage") {
+                $sourceUrl = if ($ki.url) {
+                    $ki.url
+                } elseif ($ki.sourceUrl) {
+                    $ki.sourceUrl
+                } elseif ($ki.properties.extendedProperties.url) {
+                    $ki.properties.extendedProperties.url
+                } elseif ($ki.properties.extendedProperties.sourceUrl) {
+                    $ki.properties.extendedProperties.sourceUrl
+                } else {
+                    $ki.properties.dataSource
                 }
-            } | ConvertTo-Json -Compress -Depth 10
+                if ([string]::IsNullOrEmpty($sourceUrl)) {
+                    Write-Host "  FAILED - knowledgeItems/$fname is missing url"
+                    $knowledgeItemsFailed = $true
+                    continue
+                }
+                $displayName = if ($ki.displayName) {
+                    $ki.displayName
+                } elseif ($ki.properties.extendedProperties.displayName) {
+                    $ki.properties.extendedProperties.displayName
+                } else {
+                    $fname
+                }
+                $description = if ($ki.description) {
+                    $ki.description
+                } elseif ($ki.properties.extendedProperties.description) {
+                    $ki.properties.extendedProperties.description
+                } else {
+                    ""
+                }
+                $body = @{
+                    name       = $fname
+                    type       = "KnowledgeItem"
+                    tags       = @()
+                    properties = @{
+                        dataConnectorType  = "KnowledgeWebPage"
+                        dataSource         = $sourceUrl
+                        extendedProperties = @{
+                            url         = $sourceUrl
+                            displayName = $displayName
+                            description = $description
+                        }
+                        identity = ""
+                    }
+                } | ConvertTo-Json -Compress -Depth 10
+            } else {
+                $content = $ki.content
+                if ([string]::IsNullOrEmpty($content)) {
+                    Write-Host "  FAILED - knowledgeItems/$fname is missing content"
+                    $knowledgeItemsFailed = $true
+                    continue
+                }
+                $itemName = ($fname.ToLower() -replace '[^a-z0-9-]', '-') -replace '-+', '-' -replace '^-|-$', ''
+                $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($content))
+                $ctype = switch -Regex ($fname) {
+                    '\.md$'   { "text/markdown" }
+                    '\.txt$'  { "text/plain" }
+                    '\.pdf$'  { "application/pdf" }
+                    '\.json$' { "application/json" }
+                    default   { "application/octet-stream" }
+                }
+                $body = @{
+                    name       = $itemName
+                    type       = "KnowledgeItem"
+                    tags       = @()
+                    properties = @{
+                        dataConnectorType  = "KnowledgeFile"
+                        dataSource         = $itemName
+                        extendedProperties = @{
+                            displayName = $fname
+                            fileName    = $fname
+                            fileContent = $b64
+                            contentType = $ctype
+                        }
+                    }
+                } | ConvertTo-Json -Compress -Depth 10
+            }
             $token = Get-DpToken
-            $url = "${AgentEndpoint}/api/v2/extendedAgent/connectors/$([Uri]::EscapeDataString($sanitized))"
+            $url = "${AgentEndpoint}/api/v2/extendedAgent/connectors/$([Uri]::EscapeDataString($itemName))"
             try {
                 $result = curl -sS -w "`n%{http_code}" -X PUT $url `
                     -H "Authorization: Bearer $token" `
@@ -720,14 +781,39 @@ if ($kiCount -gt 0) {
                 $lines = $result -split "`n"
                 $httpCode = $lines[-1]
                 if ($httpCode -match '^2') {
-                    Write-Host "  ok knowledgeItems/$sanitized"
+                    Write-Host "  ok knowledgeItems/$itemName ($itemType)"
+                } elseif ($itemType -eq "KnowledgeWebPage") {
+                    $current = Invoke-RestMethod -TimeoutSec 30 -Uri $url -Method Get -Headers @{
+                        Authorization = "Bearer $token"
+                    }
+                    $currentUrl = $current.properties.extendedProperties.url
+                    if ([string]::IsNullOrEmpty($currentUrl)) {
+                        $currentUrl = $current.properties.extendedProperties.sourceUrl
+                    }
+                    if ([string]::IsNullOrEmpty($currentUrl)) {
+                        $currentUrl = $current.properties.extendedProperties.'metadata.url'
+                    }
+                    if ([string]::IsNullOrEmpty($currentUrl)) {
+                        $currentUrl = $current.properties.dataSource
+                    }
+                    if ($current.properties.dataConnectorType -eq $itemType -and $currentUrl -eq $sourceUrl) {
+                        Write-Host "  ok knowledgeItems/$itemName ($itemType, already current after HTTP $httpCode)"
+                    } else {
+                        Write-Host "  FAILED - PUT knowledgeItems/$itemName (HTTP $httpCode)"
+                        $knowledgeItemsFailed = $true
+                    }
                 } else {
-                    Write-Host "  FAILED - PUT knowledgeItems/$sanitized (HTTP $httpCode)"
+                    Write-Host "  FAILED - PUT knowledgeItems/$itemName (HTTP $httpCode)"
+                    $knowledgeItemsFailed = $true
                 }
             } catch {
-                Write-Host "  FAILED - PUT knowledgeItems/$sanitized (exception)"
+                Write-Host "  FAILED - PUT knowledgeItems/$itemName (exception)"
+                $knowledgeItemsFailed = $true
             }
             if ($i -lt ($kiCount - 1)) { Start-Sleep -Seconds 5 }
+        }
+        if ($knowledgeItemsFailed) {
+            throw "One or more knowledge items failed to deploy."
         }
     } else {
         Write-Host "knowledgeItems: $kiCount - skipped (no data-plane token)"

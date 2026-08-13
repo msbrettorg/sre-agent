@@ -1,0 +1,40 @@
+api_version: azuresre.ai/v2
+kind: ExtendedAgentTool
+metadata:
+  name: cost-optimization-index
+spec:
+  type: KustoTool
+  mode: Query
+  connector: finops-hub-kusto
+  description: "Calculates the Cost Optimization Index by comparing total reservation recommendation savings opportunity against\
+    \ amortized total cost for the reporting window. Reported as a single hub-wide score because the Hub `Recommendations()`\
+    \ table does not carry a `BillingCurrency` dimension and savings cannot be safely attributed back to a specific currency.\
+    \ KPI: Cost Optimization Index (COIN) Formula: COIN Score = [1 \u2013 (Total Savings Opportunity / Total Cost)] * 100\
+    \ Author: FinOps toolkit"
+  database: Hub
+  query: |-
+    let startDate = ##startDate##;
+    let endDate = ##endDate##;
+    let totalSavingsOpportunity = toscalar(
+        Recommendations()
+        | where x_SourceType == 'ReservationRecommendations'
+        | summarize TotalSavingsOpportunity = todouble(sum(x_EffectiveCostSavings))
+    );
+    Costs()
+    | where ChargePeriodStart >= startDate and ChargePeriodStart < endDate
+    | where not(ChargeCategory == 'Purchase' and isnotempty(CommitmentDiscountCategory))
+    | summarize TotalCost = todouble(sum(EffectiveCost))
+    | extend ReportingCurrencyScope = 'HubWide'
+    | extend TotalSavingsOpportunity = todouble(coalesce(totalSavingsOpportunity, 0.0))
+    | extend RawCOINScore = iff(TotalCost == 0.0, 0.0, (1.0 - TotalSavingsOpportunity / TotalCost) * 100.0)
+    | extend COINScore = todouble(iff(RawCOINScore < 0.0, 0.0, RawCOINScore))
+    | project ReportingCurrencyScope, TotalSavingsOpportunity = todouble(TotalSavingsOpportunity), TotalCost = todouble(TotalCost), COINScore
+  parameters:
+  - name: startDate
+    type: string
+    description: datetime = startofmonth(ago(30d))
+    required: true
+  - name: endDate
+    type: string
+    description: datetime = startofmonth(now())
+    required: true

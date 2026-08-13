@@ -1,0 +1,42 @@
+api_version: azuresre.ai/v2
+kind: ExtendedAgentTool
+metadata:
+  name: allocation-accuracy-index
+spec:
+  type: KustoTool
+  mode: Query
+  connector: finops-hub-kusto
+  description: "Calculates the percentage of total effective cost that is directly attributed using a three-signal heuristic:\
+    \ allocation rule, cost center, or ownership-tag evidence. KPI: Allocation Accuracy Index (AAI) Formula: Allocation Accuracy\
+    \ Index (AAI) = (Directly Attributed Costs / Total Infrastructure Costs) \xD7 100 Author: FinOps toolkit"
+  database: Hub
+  query: |-
+    let startDate = ##startDate##;
+    let endDate = ##endDate##;
+    let allocationEvidenceTagKeys = ##allocationEvidenceTagKeys##;
+    Costs()
+    | where ChargePeriodStart >= startDate and ChargePeriodStart < endDate
+    | where not(ChargeCategory == 'Purchase' and isnotempty(CommitmentDiscountCategory))
+    | extend tmp_TagKeys = coalesce(bag_keys(Tags), dynamic([]))
+    | extend tmp_IsAttributed = isnotempty(x_CostAllocationRuleName)
+                              or isnotempty(x_CostCenter)
+                              or array_length(set_intersect(tmp_TagKeys, allocationEvidenceTagKeys)) > 0
+    | summarize
+        DirectlyAttributedCost = todouble(sumif(EffectiveCost, tmp_IsAttributed)),
+        TotalEffectiveCost = todouble(sum(EffectiveCost))
+        by BillingCurrency
+    | extend AAI = iff(TotalEffectiveCost == 0, 0.0, DirectlyAttributedCost / TotalEffectiveCost * 100.0)
+    | project BillingCurrency, DirectlyAttributedCost, TotalEffectiveCost, AAI
+  parameters:
+  - name: startDate
+    type: string
+    description: 'datetime; start date for the reporting period (default: startofmonth(ago(30d)))'
+    required: true
+  - name: endDate
+    type: string
+    description: 'datetime; end date for the reporting period (default: startofmonth(now()))'
+    required: true
+  - name: allocationEvidenceTagKeys
+    type: string
+    description: 'dynamic; tag keys treated as ownership evidence (default: dynamic([''cost-center'',''team'',''owner'',''application'',''product'']))'
+    required: true

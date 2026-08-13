@@ -1,0 +1,35 @@
+api_version: azuresre.ai/v2
+kind: ExtendedAgentTool
+metadata:
+  name: percentage-untagged-costs
+spec:
+  type: KustoTool
+  mode: Query
+  connector: finops-hub-kusto
+  description: 'Calculates the percentage of EffectiveCost attributable to CSP resources with no tags. Results are grouped
+    by BillingCurrency and exclude commitment purchases to avoid double-counting amortized costs. KPI: Percentage of Costs
+    Associated with Untagged CSP Cloud Resources Formula: (Total Effective Costs Associated with Untagged CSP Cloud Resources
+    During a Period of Time / Total CSP Effective Cost During a Period of Time) x 100 Author: FinOps toolkit'
+  database: Hub
+  query: |-
+    let startDate = ##startDate##;
+    let endDate = ##endDate##;
+    Costs()
+    | where ChargePeriodStart >= startDate and ChargePeriodStart < endDate
+    | where not(ChargeCategory == 'Purchase' and isnotempty(CommitmentDiscountCategory))
+    | extend isUntagged = isnull(Tags) or array_length(bag_keys(Tags)) == 0
+    | summarize
+        UntaggedEffectiveCost = todouble(sumif(EffectiveCost, isUntagged)),
+        TotalEffectiveCost = todouble(sum(EffectiveCost))
+        by BillingCurrency
+    | extend UntaggedPercent = todouble(iff(TotalEffectiveCost == 0.0, 0.0, UntaggedEffectiveCost / TotalEffectiveCost * 100.0))
+    | project BillingCurrency, UntaggedEffectiveCost, TotalEffectiveCost, UntaggedPercent
+  parameters:
+  - name: startDate
+    type: string
+    description: datetime = startofmonth(ago(30d))
+    required: true
+  - name: endDate
+    type: string
+    description: datetime = startofmonth(now())
+    required: true

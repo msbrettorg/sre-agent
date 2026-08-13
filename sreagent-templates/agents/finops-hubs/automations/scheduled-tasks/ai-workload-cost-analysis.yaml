@@ -1,0 +1,194 @@
+api_version: azuresre.ai/v2
+kind: ScheduledTask
+metadata:
+  name: AIWorkloadCostAnalysis
+spec:
+  name: AIWorkloadCostAnalysis
+  description: Monthly AI workload cost analysis — token economics, model efficiency, and cost allocation for Azure OpenAI
+  schedule: 0 10 1 * *
+  mode: Review
+  agent: finops-practitioner
+  prompt: '# AI Workload Cost Analysis
+
+
+    ## Phase 0: Preparation
+
+
+    Before starting, search available knowledge and prior memory for relevant context, known issues, and previous findings.
+
+    Output style: Label measured, derived, and estimated evidence; cite each source or derivation; state exact scope and time period; organize findings by FinOps capability; include risk thresholds, confidence, caveats, and required disclaimers.
+
+    Tool routing and delivery guard: This scheduled task is owned by `finops-practitioner`, which has KB-only SearchMemory plus its own Teams delivery tools (`GetMessagesFromChannel`, `PostMessageToConversation`, `ReplyWithMessageToConversation`); it has no Kusto, Azure CLI, Resource Graph, capacity, Outlook, data-collection, or remediation tools. Use the `Task` system tool to invoke specialist subagents for all tool work and pass the full task scope, evidence already collected, open questions, and desired output shape with each `Task` invocation. Use `ftk-database-query` for FinOps Hub Kusto, cost, pricing, recommendation, and transaction query tools. Use `azure-capacity-manager` for capacity, quota, capacity reservation group, SKU availability, database service quota, and benefit recommendation Python tools. Use `ftk-hubs-agent` for FinOps Hub infrastructure health, Resource Graph inventory, data freshness, deployment, remediation, alert and budget deployment, and Advisor suppression operations. Use `chief-financial-officer` only for executive finance framing. For each chart, ask whichever tool-bearing specialist already collected the underlying evidence for that chart (`ftk-database-query` for Kusto/cost evidence, `azure-capacity-manager` for capacity evidence, or `ftk-hubs-agent` for Hub infrastructure evidence) to render it using its own `PlotBarChart`, `PlotPieChart`, or `PlotAreaChartWithCorrelation` tool; do not route a chart to a specialist outside the domain that produced its data. Only `azure-capacity-manager` also has `ExecutePythonCode`; use it only as a fallback chart-generation method within its own capacity-evidence work, never for `ftk-database-query` or `ftk-hubs-agent`, which do not have that tool. Ask each involved specialist to check its own available visualization tools exactly once per run and remember whether `SendOutlookEmail`, `PlotBarChart`, `PlotPieChart`, `PlotAreaChartWithCorrelation`, and, for `azure-capacity-manager` only, `ExecutePythonCode` are present. Do not call notification, email, connector, Microsoft Graph, `dynamicInvoke`, raw webhook, or connector APIs just to test availability. If the specialist that owns the data for a chart has no visualization tool available, provide that data as a chart-ready table or structured specification in the report instead of inventing a tool. Complete the report, and collect any chart artifacts from the specialists, before delivery. `finops-practitioner` delivers the final report to Microsoft Teams itself with its own `PostMessageToConversation` tool; do not delegate Teams delivery to a specialist. When a Teams connector/channel is configured, `finops-practitioner` makes one final `PostMessageToConversation` attempt itself to the configured Teams channel. When an Outlook connector/recipient is configured, ask a tool-bearing specialist involved in this task (`ftk-database-query`, `azure-capacity-manager`, or `ftk-hubs-agent`, all of which have `SendOutlookEmail`) to make one final attempt with the same final report and any generated chart artifacts. If a configured delivery path fails, mark the task/run failed instead of degrading to local output or probing alternate paths. If neither Teams nor Outlook delivery is configured or available, render the completed report in the run output and explicitly state which delivery paths were skipped.
+
+
+
+     Lead the analysis as the FinOps practitioner. Delegate all FinOps Hub Kusto evidence collection to `ftk-database-query`, delegate GPU and regional capacity checks to `azure-capacity-manager`, and consult `chief-financial-officer` for executive unit-economics and investment framing.
+
+
+    Azure OpenAI charges based on token usage — a fundamentally different cost model from traditional compute. This analysis tracks token economics, model efficiency, and AI cost allocation aligned with
+    the FinOps Foundation AI Working Group guidance and FOCUS specification.
+
+    ## Specialist evidence requests for this task
+
+    Do not run Kusto tools directly. Ask `ftk-database-query` to run AI cost and token tools, and ask `azure-capacity-manager` to run GPU and regional capacity checks. Ask `ftk-hubs-agent` to run `resource-graph-query` only for Azure resource inventory and governance context.
+
+    - `ftk-hubs-agent`: Run `resource-graph-query` with query and subscriptions to execute Azure Resource Graph KQL for AI resource discovery
+    - `azure-capacity-manager`: Run `vm-quota-usage` with subscription_id and location to get VM family quota usage with at-risk thresholds for GPU capacity
+    - `ftk-database-query`: Run `ai-token-usage-breakdown`, `ai-daily-trend`, and `ai-model-cost-comparison` as the FinOps KPI-backed token consumption evidence set
+
+
+    ## FOCUS Alignment
+
+
+    AI cost data uses these FOCUS columns:
+
+    - ConsumedQuantity = token count
+
+    - ConsumedUnit = tokens
+
+    - x_SkuMeterCategory = Azure OpenAI
+
+    - x_SkuMeterSubcategory = model version + direction (e.g., "gpt 4o 0513 Input global Tokens")
+
+    - Unit economics = EffectiveCost / ConsumedQuantity
+
+
+    ## Phase 1: Token Economics
+
+
+    This phase covers the `Token Consumption Metrics` KPI in `src/queries/KPI.md`. Keep `ai-token-usage-breakdown`, `ai-daily-trend`, and `ai-model-cost-comparison` results together as the AI unit-economics KPI evidence set.
+
+
+    ### 1.1 Token Usage Breakdown
+
+    Ask `ftk-database-query` to run `ai-token-usage-breakdown` with startDate=startofmonth(ago(30d)), endDate=startofmonth(now()). Record per-model, per-direction (input/output):
+
+    - Total tokens consumed
+
+    - Effective cost
+
+    - Unit cost per token
+
+    - Cost per 1K tokens
+
+
+    ### 1.2 Model Cost Comparison
+
+    Ask `ftk-database-query` to run `ai-model-cost-comparison` with the same date range. Compare cost per 1K tokens across model versions. Identify:
+
+    - Which models are most expensive per token
+
+    - Which models have the best discount (list vs effective)
+
+    - Opportunities to switch to cheaper models for equivalent tasks
+
+
+    ### 1.3 Daily Trend
+
+    Ask `ftk-database-query` to run `ai-daily-trend` with startDate=ago(30d). Look for:
+
+    - Usage pattern (weekday vs weekend)
+
+    - Cost spikes (any day > 2x the 7-day rolling average)
+
+    - Growth trajectory (are AI costs accelerating?)
+
+    - If spikes detected, use deep investigation to hypothesize causes
+
+
+    ### 1.4 Cost Allocation
+
+    Ask `ftk-hubs-agent` to run `resource-graph-query` to discover Azure OpenAI, AI Foundry, Machine Learning, and GPU compute resources, then ask `ftk-database-query` to run `ai-cost-by-application` with the same date range. Break down by:
+
+    - Application tag — which apps consume the most tokens?
+
+    - Team/CostCenter — who should be charged?
+
+    - Environment — production vs dev/test ratio
+
+    - ResourceName — which Azure OpenAI deployments are driving cost?
+
+
+    **Checkpoint:** Token economics collected. Proceed to month-over-month comparison.
+
+
+    ## Phase 2: Month-over-Month AI Analysis
+
+
+    ### 2.1 Prior Month Comparison
+
+    Ask `ftk-database-query` to run `ai-token-usage-breakdown` again with the PRIOR month (startDate=startofmonth(ago(60d)), endDate=startofmonth(ago(30d))). Compare:
+
+    - Token volume change (% growth)
+
+    - Cost change (% growth)
+
+    - Unit cost change (are we getting cheaper or more expensive per token?)
+
+    - Model mix shift (are we using more expensive models?)
+
+
+    ### 2.2 Input/Output Ratio
+
+    Calculate the input-to-output token ratio for each model. Long prompts with short responses indicate potential prompt optimization. Flag any model where input tokens > 10x output tokens.
+
+
+    ## Phase 3: Optimization Recommendations
+
+
+    ### 3.1 Model Substitution
+
+    For each high-cost model, check if a cheaper model could handle the same workload. Reference the model cost comparison data. Calculate potential savings from model downgrades.
+
+
+    ### 3.2 Prompt Engineering Impact
+
+    If input tokens are disproportionately high, recommend prompt optimization. Shorter context windows = fewer tokens = lower cost.
+
+
+    ### 3.3 Environment Rightsizing
+
+    If dev/test environments are using production-tier models, recommend cheaper models for non-production.
+
+
+    ### 3.4 Commitment Coverage
+
+    Check if Azure OpenAI Provisioned Throughput Units (PTUs) would be cheaper than pay-as-you-go for high-volume workloads.
+
+    Ask `azure-capacity-manager` to run `vm-quota-usage` in GPU-capable regions to identify GPU quota constraints for AI workloads that rely on VM-hosted inference or training.
+
+
+    ## Phase 4: Report
+
+
+    Format as a professional AI cost report:
+
+    - Executive summary with total AI spend, token volume, and cost per 1K tokens
+
+    - Model efficiency table (cost per 1K tokens by model, input vs output)
+
+    - Application allocation table (cost by app/team/environment)
+
+    - Month-over-month trend chart description
+
+    - Top 3 optimization recommendations with dollar savings estimates
+
+    - FOCUS compliance note (all metrics use standard FOCUS columns)
+
+
+    Use 🤖 for AI metrics, 💰 for savings, 📊 for trends, 🎯 for recommendations.
+
+
+    Do not stop until the report is complete.
+
+
+    ## Phase 5: Deliver
+
+
+
+    **Visualizations:** Before delivery, ask the tool-bearing specialist already handling that evidence to generate charts for key findings using its own `PlotBarChart`, `PlotPieChart`, or `PlotAreaChartWithCorrelation` tool when those visualization tools fit the data. Only `azure-capacity-manager` also has `ExecutePythonCode`; use it as a fallback chart-generation method only within its own capacity-evidence work, never for `ftk-database-query` or `ftk-hubs-agent`, which do not have that tool. If the specialist handling that evidence has no visualization tool that can express the required chart, provide the underlying data as a chart-ready table or structured specification instead of inventing a tool. Include at minimum one trend chart and one comparison chart where the data supports it. Verify each generated chart non-visually before embedding by checking the output file exists, has non-zero size, opens as an image, and reports expected dimensions and metadata through code interpreter filesystem or image-library checks. Do not use visual inspection as the verification gate; regenerate or omit any chart that fails these checks and state why. Embed the chart images inline in the Teams message and attach or embed them in the Outlook email alongside the text tables. Charts make the report immediately actionable for stakeholders who scan rather than read.
+
+    **Teams and Outlook (financial results only):** Post the final AI workload cost report to our Teams channel. Include the executive summary, token economics, model efficiency table, and top optimization recommendations. Do not post intermediate results — only the completed report. Ask the selected delivery specialist to use `PostMessageToConversation` and `SendOutlookEmail` only when the delivery guard found each tool available once per run. If neither Teams nor Outlook delivery is configured or available, return the completed report in the run output with a note naming the skipped delivery paths. If any configured Teams or Outlook final delivery attempt fails, do not retry or probe alternate delivery paths; mark the task/run failed.
+
+
+    **Knowledge base (operational learnings only):** Save any new operational insights to the knowledge base — model availability changes, query patterns for AI billing data, FOCUS column mappings discovered, tool errors encountered. Never save financial figures, cost amounts, token costs, or any customer financial data to the knowledge base. Financial detail goes to configured Teams and Outlook delivery only.'

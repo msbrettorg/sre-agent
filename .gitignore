@@ -12,3 +12,5 @@ samples/deployment-compliance/skills/.DS_Store
 
 # Browser automation artifacts
 .playwright-mcp/
+
+.azure/

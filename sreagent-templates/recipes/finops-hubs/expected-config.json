@@ -1,0 +1,66 @@
+{
+  "_scenario": "finops-hubs",
+  "agent": {
+    "accessLevel": "Low",
+    "actionMode": "Review",
+    "upgradeChannel": "Preview",
+    "defaultModelProvider": "MicrosoftFoundry",
+    "incidentPlatform": "None"
+  },
+  "connectors": [
+    {
+      "name": "finops-hub-kusto",
+      "type": "Kusto"
+    },
+    {
+      "name": "azure-resource-manager-mcp",
+      "type": "Mcp"
+    }
+  ],
+  "knowledgeItems": [
+    "finops-hub-database-guide",
+    "tutorial:-create-and-update-finops-hubs",
+    "configure-cost-management-exports-for-finops-hubs",
+    "configure-finops-hubs-recommendations",
+    "understanding-savings-calculations-in-finops-toolkit",
+    "finops-hub-data-model",
+    "upgrade-a-finops-hubs-instance",
+    "configure-private-networking-in-finops-hubs"
+  ],
+  "tools": 50,
+  "skills": [],
+  "subagents": [
+    "azure-capacity-manager",
+    "chief-financial-officer",
+    "finops-practitioner",
+    "ftk-database-query",
+    "ftk-hubs-agent"
+  ],
+  "hooks": [],
+  "commonPrompts": [
+    "safety-rules"
+  ],
+  "scheduledTasks": [
+    "AdvisorSuppressionReview",
+    "AIWorkloadCostAnalysis",
+    "AlertCoverageAudit",
+    "BenefitRecommendationReview",
+    "BudgetCoverageAudit",
+    "CapacityDailyMonitor",
+    "CapacityMonthlyPlanning",
+    "CapacityQuarterlyStrategy",
+    "CapacityWeeklySupplyReview",
+    "ComputeUtilizationTrend",
+    "CostOptimization",
+    "DbQuotaAudit",
+    "HubsHealthCheck",
+    "MonitoringScopeValidation",
+    "Monthly",
+    "NonComputeQuotaAudit",
+    "Semiannual",
+    "SkuAvailabilityAudit",
+    "StoragePaasGrowthForecast"
+  ],
+  "responsePlans": [],
+  "repos": []
+}

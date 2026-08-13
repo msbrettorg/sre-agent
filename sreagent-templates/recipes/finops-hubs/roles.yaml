@@ -1,0 +1,3 @@
+# The FinOps Hub Kusto connector uses the agent's system-assigned identity.
+# Its Kusto principal assignment is handled by the canonical deployment path.
+roles: []

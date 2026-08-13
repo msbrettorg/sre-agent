@@ -1,0 +1,79 @@
+api_version: azuresre.ai/v2
+kind: ScheduledTask
+metadata:
+  name: BudgetCoverageAudit
+spec:
+  name: BudgetCoverageAudit
+  description: Monthly audit of subscription budget coverage and missing budget controls
+  schedule: 0 8 15 * *
+  mode: Review
+  agent: finops-practitioner
+  prompt: '# Budget Coverage Audit
+
+
+    ## Phase 0: Preparation
+
+
+    Before starting, read all documents in the knowledge base. Pay special attention to budgeting standards, subscription ownership notes, and prior missing-budget findings.
+
+    Output style: Label measured, derived, and estimated evidence; cite each source or derivation; state exact scope and time period; organize findings by FinOps capability; include risk thresholds, confidence, caveats, and required disclaimers.
+
+    Tool routing and delivery guard: This scheduled task is owned by `finops-practitioner`, which has KB-only SearchMemory plus its own Teams delivery tools (`GetMessagesFromChannel`, `PostMessageToConversation`, `ReplyWithMessageToConversation`); it has no Kusto, Azure CLI, Resource Graph, capacity, Outlook, data-collection, or remediation tools. Use the `Task` system tool to invoke specialist subagents for all tool work and pass the full task scope, evidence already collected, open questions, and desired output shape with each `Task` invocation. Use `ftk-database-query` for FinOps Hub Kusto, cost, pricing, recommendation, and transaction query tools. Use `azure-capacity-manager` for capacity, quota, capacity reservation group, SKU availability, database service quota, and benefit recommendation Python tools. Use `ftk-hubs-agent` for FinOps Hub infrastructure health, Resource Graph inventory, data freshness, deployment, remediation, alert and budget deployment, and Advisor suppression operations. Use `chief-financial-officer` only for executive finance framing. For each chart, ask whichever tool-bearing specialist already collected the underlying evidence for that chart (`ftk-database-query` for Kusto/cost evidence, `azure-capacity-manager` for capacity evidence, or `ftk-hubs-agent` for Hub infrastructure evidence) to render it using its own `PlotBarChart`, `PlotPieChart`, or `PlotAreaChartWithCorrelation` tool; do not route a chart to a specialist outside the domain that produced its data. Only `azure-capacity-manager` also has `ExecutePythonCode`; use it only as a fallback chart-generation method within its own capacity-evidence work, never for `ftk-database-query` or `ftk-hubs-agent`, which do not have that tool. Ask each involved specialist to check its own available visualization tools exactly once per run and remember whether `SendOutlookEmail`, `PlotBarChart`, `PlotPieChart`, `PlotAreaChartWithCorrelation`, and, for `azure-capacity-manager` only, `ExecutePythonCode` are present. Do not call notification, email, connector, Microsoft Graph, `dynamicInvoke`, raw webhook, or connector APIs just to test availability. If the specialist that owns the data for a chart has no visualization tool available, provide that data as a chart-ready table or structured specification in the report instead of inventing a tool. Complete the report, and collect any chart artifacts from the specialists, before delivery. `finops-practitioner` delivers the final report to Microsoft Teams itself with its own `PostMessageToConversation` tool; do not delegate Teams delivery to a specialist. When a Teams connector/channel is configured, `finops-practitioner` makes one final `PostMessageToConversation` attempt itself to the configured Teams channel. When an Outlook connector/recipient is configured, ask a tool-bearing specialist involved in this task (`ftk-database-query`, `azure-capacity-manager`, or `ftk-hubs-agent`, all of which have `SendOutlookEmail`) to make one final attempt with the same final report and any generated chart artifacts. If a configured delivery path fails, mark the task/run failed instead of degrading to local output or probing alternate paths. If neither Teams nor Outlook delivery is configured or available, render the completed report in the run output and explicitly state which delivery paths were skipped.
+
+
+
+    Apply the FinOps practitioner guidance in this task. Do not call Python, Kusto, Resource Graph, Azure CLI, visualization, Teams, or Outlook tools directly; delegate tool work to the specialist subagent named in the routing guard.
+
+
+    ## Specialist tools to request
+
+
+    Specialist tools use their configured authentication and the agent system-managed identity where required.
+
+
+    - `ftk-hubs-agent`: Run `resource-graph-query` with `query`, optional `subscription_ids` to find subscriptions, budget resources, tags, ownership metadata, and budget coverage gaps.
+
+
+    ## 1. Establish subscription inventory
+
+
+    Ask `ftk-hubs-agent` to run `resource-graph-query` to identify active subscriptions and subscription metadata needed for ownership, environment, cost center, or portfolio grouping. Exclude subscriptions that are documented as out of scope.
+
+
+    ## 2. Find configured budgets
+
+
+    Ask `ftk-hubs-agent` to run `resource-graph-query` against budget resource types and related policy or governance metadata. Identify subscription-level budgets and any documented management-group or shared budget coverage that should count as coverage.
+
+
+    ## 3. Identify coverage gaps
+
+
+    Compare active subscriptions with detected budget coverage. Report subscriptions missing budgets, subscriptions with ambiguous budget scope, and subscriptions where owner metadata is missing or incomplete.
+
+
+    ## 4. Recommend remediation
+
+
+    Recommend budget creation, owner follow-up, tag correction, or policy remediation for each uncovered subscription. Prioritize production and high-risk environments first.
+
+
+    ## Report format
+
+
+    Produce a markdown report with an executive summary, a subscription budget coverage table, a missing-budget table, ownership gaps, and recommended remediation actions.
+
+
+    ## Persistence
+
+
+    **Teams and Outlook (results only):** Post the final report to our Teams channel. Do not post intermediate results. Ask the selected delivery specialist to use `PostMessageToConversation` and `SendOutlookEmail` only when the delivery guard found each tool available once per run. If neither Teams nor Outlook delivery is configured or available, return the completed report in the run output with a note naming the skipped delivery paths. If any configured Teams or Outlook final delivery attempt fails, do not retry or probe alternate delivery paths; mark the task/run failed.
+
+
+    **Knowledge (#remember):** Save operational findings using #remember for future reference. Do not commit task reports, financial figures, cost amounts, budget amounts, or customer financial data to git or the knowledge base. Financial detail goes to configured Teams and Outlook delivery only.
+
+
+    ## Visualizations
+
+
+    Before delivery, ask the tool-bearing specialist already handling that evidence to generate charts for key findings using its own `PlotBarChart`, `PlotPieChart`, or `PlotAreaChartWithCorrelation` tool when those visualization tools fit the data. Only `azure-capacity-manager` also has `ExecutePythonCode`; use it as a fallback chart-generation method only within its own capacity-evidence work, never for `ftk-database-query` or `ftk-hubs-agent`, which do not have that tool. If the specialist handling that evidence has no visualization tool that can express the required chart, provide the underlying data as a chart-ready table or structured specification instead of inventing a tool. Include at minimum a budget coverage by portfolio chart and a missing-budget count by environment chart where the data supports it. Verify each generated chart non-visually before embedding by checking the output file exists, has non-zero size, opens as an image, and reports expected dimensions and metadata through code interpreter filesystem or image-library checks. Do not use visual inspection as the verification gate; regenerate or omit any chart that fails these checks and state why. Embed chart images inline in the Teams message and attach or embed them in the Outlook email alongside the text tables.'

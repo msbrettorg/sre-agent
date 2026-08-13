@@ -1,0 +1,29 @@
+{
+  "_scenario": "finops-hubs",
+  "identity": {
+    "agentName": "finops-hubs-sre",
+    "resourceGroup": "finops-hubs-sre",
+    "subscription": "64e355d7-997c-491d-b0c1-8414dccfcf42",
+    "location": "eastus2",
+    "targetResourceGroups": [
+      "finops-hubs-demo"
+    ]
+  },
+  "access": {
+    "accessLevel": "Low",
+    "actionMode": "Review"
+  },
+  "upgradeChannel": "Preview",
+  "defaultModelProvider": "MicrosoftFoundry",
+  "monthlyAgentUnitLimit": 10000,
+  "tags": {
+    "finops-toolkit": "sre-agent",
+    "source": "microsoft-finops-toolkit"
+  },
+  "toggles": {
+    "enableWebhookBridge": false,
+    "webhookBridgeTriggerUrl": ""
+  },
+  "existingUamiId": "",
+  "existingAgentAppInsightsId": ""
+}

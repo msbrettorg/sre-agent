@@ -501,54 +501,129 @@ fi
 count=$(jq '.knowledgeItems // [] | length' "$FILE")
 if [[ "$count" -gt 0 ]]; then
   if [[ "$DP_TOKEN_AVAILABLE" == "true" ]]; then
-    echo "knowledgeItems: ${count} file(s) → Knowledge Sources (data-plane)"
+    echo "knowledgeItems: ${count} item(s) → Knowledge Sources (data-plane)"
+    knowledge_items_failed=0
     for i in $(seq 0 $((count - 1))); do
       fname=$(jq -r --argjson i "$i" '.knowledgeItems[$i].name' "$FILE")
-      content=$(jq -r --argjson i "$i" '.knowledgeItems[$i].content' "$FILE")
-      sanitized=$(echo "$fname" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
-      b64=$(echo "$content" | base64)
-      case "$fname" in
-        *.md)   ctype="text/markdown" ;;
-        *.txt)  ctype="text/plain" ;;
-        *.pdf)  ctype="application/pdf" ;;
-        *.json) ctype="application/json" ;;
-        *)      ctype="application/octet-stream" ;;
-      esac
-      body=$(jq -nc \
-        --arg name "$sanitized" \
-        --arg displayName "$fname" \
-        --arg fileName "$fname" \
-        --arg fileContent "$b64" \
-        --arg contentType "$ctype" \
-        '{
-          name: $name,
-          type: "KnowledgeItem",
-          tags: [],
-          properties: {
-            dataConnectorType: "KnowledgeFile",
-            dataSource: $name,
-            extendedProperties: {
-              displayName: $displayName,
-              fileName: $fileName,
-              fileContent: $fileContent,
-              contentType: $contentType
+      item_type=$(jq -r --argjson i "$i" '
+        .knowledgeItems[$i] |
+        .dataConnectorType // .properties.dataConnectorType // .type // "KnowledgeFile"
+      ' "$FILE")
+      item_name="$fname"
+
+      if [[ "$item_type" == "KnowledgeWebPage" ]]; then
+        source_url=$(jq -r --argjson i "$i" '
+          .knowledgeItems[$i] |
+          .url // .sourceUrl // .properties.extendedProperties.url //
+          .properties.extendedProperties.sourceUrl // .properties.dataSource // empty
+        ' "$FILE")
+        display_name=$(jq -r --argjson i "$i" '
+          .knowledgeItems[$i] |
+          .displayName // .properties.extendedProperties.displayName // .name
+        ' "$FILE")
+        description=$(jq -r --argjson i "$i" '
+          .knowledgeItems[$i] |
+          .description // .properties.extendedProperties.description // ""
+        ' "$FILE")
+        if [[ -z "$source_url" ]]; then
+          echo "  FAILED — knowledgeItems/${fname} is missing url"
+          knowledge_items_failed=1
+          continue
+        fi
+        body=$(jq -nc \
+          --arg name "$fname" \
+          --arg url "$source_url" \
+          --arg displayName "$display_name" \
+          --arg description "$description" \
+          '{
+            name: $name,
+            type: "KnowledgeItem",
+            tags: [],
+            properties: {
+              dataConnectorType: "KnowledgeWebPage",
+              dataSource: $url,
+              extendedProperties: {
+                url: $url,
+                displayName: $displayName,
+                description: $description
+              },
+              identity: ""
             }
           }
-        }')
+        ')
+      else
+        content=$(jq -r --argjson i "$i" '.knowledgeItems[$i].content // empty' "$FILE")
+        if [[ -z "$content" ]]; then
+          echo "  FAILED — knowledgeItems/${fname} is missing content"
+          knowledge_items_failed=1
+          continue
+        fi
+        item_name=$(echo "$fname" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
+        b64=$(printf '%s' "$content" | base64)
+        case "$fname" in
+          *.md)   ctype="text/markdown" ;;
+          *.txt)  ctype="text/plain" ;;
+          *.pdf)  ctype="application/pdf" ;;
+          *.json) ctype="application/json" ;;
+          *)      ctype="application/octet-stream" ;;
+        esac
+        body=$(jq -nc \
+          --arg name "$item_name" \
+          --arg displayName "$fname" \
+          --arg fileName "$fname" \
+          --arg fileContent "$b64" \
+          --arg contentType "$ctype" \
+          '{
+            name: $name,
+            type: "KnowledgeItem",
+            tags: [],
+            properties: {
+              dataConnectorType: "KnowledgeFile",
+              dataSource: $name,
+              extendedProperties: {
+                displayName: $displayName,
+                fileName: $fileName,
+                fileContent: $fileContent,
+                contentType: $contentType
+              }
+            }
+          }')
+      fi
       TOKEN=$(_dp_token)
-      url="${AGENT_ENDPOINT}/api/v2/extendedAgent/connectors/$(printf %s "$sanitized" | jq -sRr @uri)"
+      url="${AGENT_ENDPOINT}/api/v2/extendedAgent/connectors/$(printf %s "$item_name" | jq -sRr @uri)"
       result=$(curl -sS -w "\n%{http_code}" -X PUT "$url" \
         -H "Authorization: Bearer ${TOKEN}" \
         -H "Content-Type: application/json" \
         --data "$body" 2>&1)
       http_code=$(echo "$result" | tail -1)
       if [[ "$http_code" =~ ^2 ]]; then
-        echo "  ok knowledgeItems/${sanitized}"
+        echo "  ok knowledgeItems/${item_name} (${item_type})"
+      elif [[ "$item_type" == "KnowledgeWebPage" ]]; then
+        current=$(curl -sS "$url" -H "Authorization: Bearer ${TOKEN}" 2>/dev/null || true)
+        current_type=$(echo "$current" | jq -r '.properties.dataConnectorType // empty' 2>/dev/null)
+        current_url=$(echo "$current" | jq -r '
+          .properties.extendedProperties |
+          [.url, .sourceUrl, ."metadata.url"] |
+          map(select(type == "string" and length > 0)) |
+          first // empty
+        ' 2>/dev/null)
+        [[ -z "$current_url" ]] && current_url=$(echo "$current" | jq -r '.properties.dataSource // empty' 2>/dev/null)
+        if [[ "$current_type" == "$item_type" && "$current_url" == "$source_url" ]]; then
+          echo "  ok knowledgeItems/${item_name} (${item_type}, already current after HTTP ${http_code})"
+        else
+          echo "  FAILED — PUT knowledgeItems/${item_name} (HTTP ${http_code})"
+          knowledge_items_failed=1
+        fi
       else
-        echo "  FAILED — PUT knowledgeItems/${sanitized} (HTTP ${http_code})"
+        echo "  FAILED — PUT knowledgeItems/${item_name} (HTTP ${http_code})"
+        knowledge_items_failed=1
       fi
       [[ $i -lt $((count - 1)) ]] && sleep 5
     done
+    if [[ "$knowledge_items_failed" -ne 0 ]]; then
+      echo "ERROR: One or more knowledge items failed to deploy." >&2
+      exit 1
+    fi
   else
     echo "knowledgeItems: ${count} — ⚠ skipped (no data-plane token)"
     DP_SKIPPED_ITEMS+=("knowledgeItems (${count} files)")
@@ -778,8 +853,9 @@ fi
 
 # 4f-4. connectorV2 — data-plane multi-step setup via /api/v2/connectorV2
 # Each entry: { metadata: { name }, spec: { apiName, displayName, connectionName?,
-#   parameterValueSet?: { name, values }, requireApprovalTools?: [...] } }
-# Flow: 1) PUT connection  2) list consent links  3) print consent URL  4) PUT mcpserver config
+#   parameterValueSet?: { name, values }, operations?: [...],
+#   requireApprovalTools?: [...] } }
+# Flow: 1) PUT connection  2) PUT enabled MCP server config  3) print OAuth instructions
 count=$(jq '.connectorV2 // [] | length' "$FILE")
 if [[ "$count" -gt 0 ]]; then
   if [[ "$DP_TOKEN_AVAILABLE" == "true" ]]; then
@@ -792,6 +868,7 @@ if [[ "$count" -gt 0 ]]; then
       cv2_conn=$(echo "$cv2_spec" | jq -r '.connectionName // .apiName | ascii_downcase')
       cv2_pvs=$(echo "$cv2_spec" | jq -c '.parameterValueSet // null')
       cv2_pv=$(echo "$cv2_spec" | jq -c '.parameterValues // null')
+      cv2_ops=$(echo "$cv2_spec" | jq -c '.operations // null')
       cv2_rat=$(echo "$cv2_spec" | jq -c '.requireApprovalTools // null')
 
       TOKEN=$(_dp_token)
@@ -814,8 +891,17 @@ if [[ "$count" -gt 0 ]]; then
 
       # Step 2: Create MCP server config (links connection to MCP tools)
       mcp_body=$(jq -nc --arg desc "$cv2_display" --arg cn "$cv2_conn" --arg api "$cv2_api" \
-        --argjson rat "$cv2_rat" \
-        '{properties: {description: $desc, connectors: [{name: $api, connectionName: $cn}]}} + (if $rat != null then {runtimeMcpConfiguration: {requireApprovalTools: $rat}} else {} end)')
+        --argjson ops "$cv2_ops" --argjson rat "$cv2_rat" \
+        '{
+          properties: {
+            description: $desc,
+            state: "Enabled",
+            connectors: [
+              {name: $api, connectionName: $cn, displayName: $desc}
+              + (if $ops != null then {operations: $ops} else {} end)
+            ]
+          }
+        } + (if $rat != null then {runtimeMcpConfiguration: {requireApprovalTools: $rat}} else {} end)')
       TOKEN=$(_dp_token)
       mcp_result=$(curl -sS -w "\n%{http_code}" -X PUT \
         "${AGENT_ENDPOINT}/api/v2/connectorV2/mcpservers/${cv2_conn}" \
@@ -961,7 +1047,7 @@ fi
 
 # 4i-3. tools — data-plane PUT
 # Route: PUT /api/v2/extendedAgent/tools/{name}
-# Body: { name, type: "Tool", tags: [], properties: { ... tool spec } }
+# Body: { name, type: "Tool" | "ExtendedAgentTool", tags: [], properties: { ... tool spec } }
 count=$(jq '.tools // [] | length' "$FILE")
 if [[ "$count" -gt 0 ]]; then
   if [[ "$DP_TOKEN_AVAILABLE" == "true" ]]; then
@@ -969,7 +1055,13 @@ if [[ "$count" -gt 0 ]]; then
     for i in $(seq 0 $((count - 1))); do
       name=$(jq -r --argjson i "$i" '.tools[$i].metadata.name' "$FILE")
       props=$(jq -c --argjson i "$i" '.tools[$i].spec' "$FILE")
-      dataplane_put_extended "tools" "$name" "Tool" "[]" "$props"
+      object_type=$(jq -r --argjson i "$i" '
+        if (.tools[$i].spec.type == "KustoTool" or .tools[$i].spec.type == "PythonFunctionTool")
+        then "ExtendedAgentTool"
+        else "Tool"
+        end
+      ' "$FILE")
+      dataplane_put_extended "tools" "$name" "$object_type" "[]" "$props"
     done
   else
     echo "tools: ${count} — ⚠ skipped (no data-plane token)"

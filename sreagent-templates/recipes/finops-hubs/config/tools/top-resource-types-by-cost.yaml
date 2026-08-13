@@ -1,0 +1,18 @@
+api_version: azuresre.ai/v2
+kind: ExtendedAgentTool
+metadata:
+  name: top-resource-types-by-cost
+spec:
+  type: KustoTool
+  mode: Query
+  connector: finops-hub-kusto
+  description: Runs the top resource types by cost FinOps Hub catalog query.
+  database: Hub
+  query: |-
+    let N = 10;
+    let startDate = startofmonth(ago(30d)); // Default: last month
+    let endDate = startofmonth(now());
+    Costs()
+    | where ChargePeriodStart >= startDate and ChargePeriodStart < endDate
+    | summarize ResourceCount = count(), EffectiveCost = sum(EffectiveCost) by ResourceType
+    | top N by EffectiveCost desc

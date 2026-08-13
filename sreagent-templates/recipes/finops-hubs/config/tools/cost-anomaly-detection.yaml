@@ -1,0 +1,22 @@
+api_version: azuresre.ai/v2
+kind: ExtendedAgentTool
+metadata:
+  name: cost-anomaly-detection
+spec:
+  type: KustoTool
+  mode: Query
+  connector: finops-hub-kusto
+  description: Runs the cost anomaly detection FinOps Hub catalog query.
+  database: Hub
+  query: |-
+    let numberOfMonths = 12;
+    let start = startofmonth(ago(numberOfMonths * 30d));
+    let end = now();
+    let interval = 1d;
+    Costs()
+    | where ChargePeriodStart between (start .. end)
+    | summarize DailyCost = sum(EffectiveCost) by bin(ChargePeriodStart, interval)
+    | make-series CostSeries = sum(DailyCost) on ChargePeriodStart from start to end step interval
+    | extend anomalies = series_decompose_anomalies(CostSeries)
+    | project ChargePeriodStart, CostSeries, anomalies
+    | render timechart

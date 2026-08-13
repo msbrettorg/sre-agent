@@ -1,0 +1,58 @@
+[
+  {
+    "name": "finops-hub-database-guide",
+    "type": "KnowledgeWebPage",
+    "url": "https://github.com/microsoft/finops-toolkit/blob/main/src/queries/finops-hub-database-guide.md",
+    "displayName": "FinOps hub database guide",
+    "description": "Guide to querying and analyzing the FinOps hubs database."
+  },
+  {
+    "name": "tutorial:-create-and-update-finops-hubs",
+    "type": "KnowledgeWebPage",
+    "url": "https://learn.microsoft.com/en-us/cloud-computing/finops/toolkit/hubs/deploy",
+    "displayName": "Tutorial: Create and update FinOps hubs",
+    "description": "Deployment and update guidance for FinOps hubs."
+  },
+  {
+    "name": "configure-cost-management-exports-for-finops-hubs",
+    "type": "KnowledgeWebPage",
+    "url": "https://learn.microsoft.com/en-us/cloud-computing/finops/toolkit/hubs/configure-scopes",
+    "displayName": "Configure Cost Management exports for FinOps hubs",
+    "description": "Configure billing scopes and Cost Management exports for FinOps hubs."
+  },
+  {
+    "name": "configure-finops-hubs-recommendations",
+    "type": "KnowledgeWebPage",
+    "url": "https://learn.microsoft.com/en-us/cloud-computing/finops/toolkit/hubs/configure-recommendations",
+    "displayName": "Configure FinOps hubs recommendations",
+    "description": "Configure recommendation ingestion and custom recommendation queries."
+  },
+  {
+    "name": "understanding-savings-calculations-in-finops-toolkit",
+    "type": "KnowledgeWebPage",
+    "url": "https://learn.microsoft.com/en-us/cloud-computing/finops/toolkit/hubs/savings-calculations",
+    "displayName": "Understanding savings calculations in FinOps toolkit",
+    "description": "Interpret savings calculations and optimization reporting."
+  },
+  {
+    "name": "finops-hub-data-model",
+    "type": "KnowledgeWebPage",
+    "url": "https://learn.microsoft.com/en-us/cloud-computing/finops/toolkit/hubs/data-model",
+    "displayName": "FinOps hub data model",
+    "description": "FinOps hubs storage, Data Explorer, and Power BI data model."
+  },
+  {
+    "name": "upgrade-a-finops-hubs-instance",
+    "type": "KnowledgeWebPage",
+    "url": "https://learn.microsoft.com/en-us/cloud-computing/finops/toolkit/hubs/upgrade",
+    "displayName": "Upgrade a FinOps hubs instance",
+    "description": "Version-specific guidance for upgrading FinOps hubs."
+  },
+  {
+    "name": "configure-private-networking-in-finops-hubs",
+    "type": "KnowledgeWebPage",
+    "url": "https://learn.microsoft.com/en-us/cloud-computing/finops/toolkit/hubs/private-networking",
+    "displayName": "Configure private networking in FinOps hubs",
+    "description": "Configure secure private access to FinOps hubs data."
+  }
+]

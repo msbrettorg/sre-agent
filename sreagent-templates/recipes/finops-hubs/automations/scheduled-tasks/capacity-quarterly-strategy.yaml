@@ -1,0 +1,157 @@
+api_version: azuresre.ai/v2
+kind: ScheduledTask
+metadata:
+  name: CapacityQuarterlyStrategy
+spec:
+  name: CapacityQuarterlyStrategy
+  description: Quarterly capacity strategy review — FinOps maturity, commitment alignment, architecture evolution
+  schedule: 0 9 1 1,4,7,10 *
+  mode: Review
+  agent: finops-practitioner
+  prompt: '# Quarterly Capacity Strategy Review
+
+
+    ## Phase 0: Preparation
+
+
+    Before starting, search available knowledge and prior memory for relevant context, known issues, and previous findings.
+
+    Output style: Label measured, derived, and estimated evidence; cite each source or derivation; state exact scope and time period; organize findings by FinOps capability; include risk thresholds, confidence, caveats, and required disclaimers.
+
+    Tool routing and delivery guard: This scheduled task is owned by `finops-practitioner`, which has KB-only SearchMemory plus its own Teams delivery tools (`GetMessagesFromChannel`, `PostMessageToConversation`, `ReplyWithMessageToConversation`); it has no Kusto, Azure CLI, Resource Graph, capacity, Outlook, data-collection, or remediation tools. Use the `Task` system tool to invoke specialist subagents for all tool work and pass the full task scope, evidence already collected, open questions, and desired output shape with each `Task` invocation. Use `ftk-database-query` for FinOps Hub Kusto, cost, pricing, recommendation, and transaction query tools. Use `azure-capacity-manager` for capacity, quota, capacity reservation group, SKU availability, database service quota, and benefit recommendation Python tools. Use `ftk-hubs-agent` for FinOps Hub infrastructure health, Resource Graph inventory, data freshness, deployment, remediation, alert and budget deployment, and Advisor suppression operations. Use `chief-financial-officer` only for executive finance framing. For each chart, ask whichever tool-bearing specialist already collected the underlying evidence for that chart (`ftk-database-query` for Kusto/cost evidence, `azure-capacity-manager` for capacity evidence, or `ftk-hubs-agent` for Hub infrastructure evidence) to render it using its own `PlotBarChart`, `PlotPieChart`, or `PlotAreaChartWithCorrelation` tool; do not route a chart to a specialist outside the domain that produced its data. Only `azure-capacity-manager` also has `ExecutePythonCode`; use it only as a fallback chart-generation method within its own capacity-evidence work, never for `ftk-database-query` or `ftk-hubs-agent`, which do not have that tool. Ask each involved specialist to check its own available visualization tools exactly once per run and remember whether `SendOutlookEmail`, `PlotBarChart`, `PlotPieChart`, `PlotAreaChartWithCorrelation`, and, for `azure-capacity-manager` only, `ExecutePythonCode` are present. Do not call notification, email, connector, Microsoft Graph, `dynamicInvoke`, raw webhook, or connector APIs just to test availability. If the specialist that owns the data for a chart has no visualization tool available, provide that data as a chart-ready table or structured specification in the report instead of inventing a tool. Complete the report, and collect any chart artifacts from the specialists, before delivery. `finops-practitioner` delivers the final report to Microsoft Teams itself with its own `PostMessageToConversation` tool; do not delegate Teams delivery to a specialist. When a Teams connector/channel is configured, `finops-practitioner` makes one final `PostMessageToConversation` attempt itself to the configured Teams channel. When an Outlook connector/recipient is configured, ask a tool-bearing specialist involved in this task (`ftk-database-query`, `azure-capacity-manager`, or `ftk-hubs-agent`, all of which have `SendOutlookEmail`) to make one final attempt with the same final report and any generated chart artifacts. If a configured delivery path fails, mark the task/run failed instead of degrading to local output or probing alternate paths. If neither Teams nor Outlook delivery is configured or available, render the completed report in the run output and explicitly state which delivery paths were skipped.
+
+
+
+    Orchestration rule: This scheduled task is owned by `finops-practitioner`. Delegate capacity evidence collection and specialist analysis to `azure-capacity-manager`; do not try to run capacity tools directly from the practitioner. When the specialist returns evidence, assemble the final FinOps report, apply the reporting requirements in this task, generate supported visualizations, and deliver the completed output through configured connectors.
+
+    Ask `azure-capacity-manager` to apply its capacity-management guidance during the `Task` invocation.
+
+
+    Quarterly strategic review bridging capacity management with FinOps Rate Optimization, Architecting & Workload Placement, and leadership strategy alignment.
+
+    ## Specialist tools to request from `azure-capacity-manager`
+
+    Ask `azure-capacity-manager` to use the following Python tools instead of `az` CLI commands when available. Specialist tools use their configured authentication and the agent system-managed identity where required.
+
+    - `azure-capacity-manager`: Run `benefit-recommendations` with billing_scope and lookback to get reservation and savings plan recommendations
+    - `ftk-hubs-agent`: Run `resource-graph-query` with query and subscriptions to execute Azure Resource Graph KQL
+    - `vm-quota-usage`: Run with subscription_id and location to get VM family quota usage with at-risk thresholds
+    - `ftk-database-query`: Run `commitment-utilization-score`, `commitment-discount-waste`, `compute-spend-commitment-coverage`, `compute-cost-per-core`, and `macc-consumption-vs-commitment` for quarterly Rate Optimization KPI evidence
+
+
+    ## 1. FinOps Capability Maturity Assessment
+
+
+    Assess maturity across the FinOps capabilities this capacity review supports:
+
+
+    | Capability | Crawl | Walk | Run |
+
+    |------|-------|------|-----|
+
+    | Planning & Estimating | Ad-hoc estimates | Telemetry-based estimates | Estimate checks integrated into workload intake |
+
+    | Forecasting | Reactive demand projection | Forecasts from cost and utilization trends | Forecasts integrated into budget and engineering planning |
+
+    | Architecting & Workload Placement | Ad-hoc placement decisions | Regular architecture and placement review | Placement decisions integrated into engineering intake and governance |
+
+    | Automation, Tools, & Services | Manual quota checks | Alert-based quota and capacity governance | Automated guardrails and exception review |
+
+
+    Score current maturity and recommend next-level actions.
+
+
+    ## 2. Commitment Alignment
+
+
+    Ask `azure-capacity-manager` to run `benefit-recommendations` for Azure Cost Management recommendations. Ask `ftk-database-query` to run `reservation-recommendation-breakdown`, `commitment-discount-utilization`, `savings-summary-report`, `commitment-utilization-score`, `commitment-discount-waste`, `compute-spend-commitment-coverage`, `compute-cost-per-core`, and `macc-consumption-vs-commitment` with quarterly scope for Kusto-backed commitment, savings, coverage, and unit-economics evidence.
+
+
+    Align capacity reservations with commitment purchases:
+
+    - Which CRGs have matching Azure Reservations? (ideal)
+
+    - Which CRGs are paying full price? (needs reservation)
+
+    - Which reservations don''t have CRG capacity? (supply risk)
+
+    - RI/SP purchase recommendations for next quarter
+
+
+    ## 3. Architecture Review
+
+
+    Ask `ftk-hubs-agent` to run `resource-graph-query` for resource inventory, and ask `azure-capacity-manager` to use `vm-quota-usage` for multi-subscription quota distribution:
+
+    - Stamp-based isolation health — any stamps at capacity?
+
+    - Multi-subscription quota distribution — balanced?
+
+    - Regional expansion needs for next quarter
+
+    - AKS cluster capacity governance
+
+
+
+
+    ## 4. Non-Compute Quotas
+
+
+    Review non-compute service quotas from available Hub data and resource inventory:
+
+    - Storage account limits
+
+    - Cosmos DB throughput limits
+
+    - Service Bus/Event Hub namespace limits
+
+    - Any service-specific scaling constraints
+
+
+
+
+    ## 5. Governance Program Health
+
+
+    Evaluate the capacity governance program:
+
+    - Monthly review cadence maintained?
+
+    - Post-incident reviews conducted for scaling failures?
+
+    - Alert coverage complete?
+
+    - Scripts and tooling up to date?
+
+
+
+
+    ## Output
+
+
+    Quarterly capacity strategy brief for leadership:
+
+    - FinOps capability maturity scorecard with progression plan
+
+    - Commitment alignment matrix (capacity + pricing)
+
+    - Quarterly capacity and workload-placement roadmap
+
+    - Key risks and mitigations
+
+    - Budget impact of capacity decisions
+
+
+    Use deep investigation for any strategic decisions. Use #remember to note key strategy findings.
+
+
+    ## Deliver
+
+
+
+    **Visualizations:** Before delivery, ask the tool-bearing specialist already handling that evidence to generate charts for key findings using its own `PlotBarChart`, `PlotPieChart`, or `PlotAreaChartWithCorrelation` tool when those visualization tools fit the data. Only `azure-capacity-manager` also has `ExecutePythonCode`; use it as a fallback chart-generation method only within its own capacity-evidence work, never for `ftk-database-query` or `ftk-hubs-agent`, which do not have that tool. If the specialist handling that evidence has no visualization tool that can express the required chart, provide the underlying data as a chart-ready table or structured specification instead of inventing a tool. Include at minimum one trend chart and one comparison chart where the data supports it. Verify each generated chart non-visually before embedding by checking the output file exists, has non-zero size, opens as an image, and reports expected dimensions and metadata through code interpreter filesystem or image-library checks. Do not use visual inspection as the verification gate; regenerate or omit any chart that fails these checks and state why. Embed the chart images inline in the Teams message and attach or embed them in the Outlook email alongside the text tables. Charts make the report immediately actionable for stakeholders who scan rather than read.
+
+    **Teams and Outlook (strategy results only):** Post the final quarterly capacity strategy brief to our Teams channel. Include the maturity scorecard, commitment alignment matrix, quarterly roadmap, and key risks. Do not post intermediate results — only the completed strategy brief. Ask the selected delivery specialist to use `PostMessageToConversation` and `SendOutlookEmail` only when the delivery guard found each tool available once per run. If neither Teams nor Outlook delivery is configured or available, return the completed report in the run output with a note naming the skipped delivery paths. If any configured Teams or Outlook final delivery attempt fails, do not retry or probe alternate delivery paths; mark the task/run failed.
+
+
+    **Knowledge base (operational learnings only):** Save any new operational insights to the knowledge base — maturity assessment methodology refinements, commitment alignment patterns, architecture observations, CLI workarounds. Never save financial figures, cost amounts, or any customer financial data to the knowledge base. Financial detail goes to configured Teams and Outlook delivery only.'

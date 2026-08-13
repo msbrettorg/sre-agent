@@ -1,0 +1,35 @@
+api_version: azuresre.ai/v2
+kind: ExtendedAgentTool
+metadata:
+  name: compute-spend-commitment-coverage
+spec:
+  type: KustoTool
+  mode: Query
+  connector: finops-hub-kusto
+  description: 'Computes the share of compute spend covered by commitment discounts over a selected reporting window. Uses
+    effective cost for commitment-backed compute spend and contracted cost for the compute baseline. KPI: Percent of Compute
+    Spend Covered by Commitment Discounts Formula: Compute Cost after Commitment Discount / On-Demand Compute Cost Author:
+    FinOps toolkit'
+  database: Hub
+  query: |-
+    let startDate = ##startDate##;
+    let endDate = ##endDate##;
+    Costs()
+    | where ChargePeriodStart >= startDate and ChargePeriodStart < endDate
+    | where not(ChargeCategory == 'Purchase' and isnotempty(CommitmentDiscountCategory))
+    | where ServiceCategory == 'Compute'
+    | summarize
+        CommittedComputeEffectiveCost = todouble(sumif(EffectiveCost, isnotempty(CommitmentDiscountCategory))),
+        TotalComputeContractedCost = todouble(sum(ContractedCost))
+        by BillingCurrency
+    | extend CoveragePercent = todouble(iff(TotalComputeContractedCost == 0.0, 0.0, 100.0 * CommittedComputeEffectiveCost / TotalComputeContractedCost))
+    | project BillingCurrency, CommittedComputeEffectiveCost, TotalComputeContractedCost, CoveragePercent
+  parameters:
+  - name: startDate
+    type: string
+    description: 'datetime; start of the reporting period (default: startofmonth(ago(30d)))'
+    required: true
+  - name: endDate
+    type: string
+    description: 'datetime; end of the reporting period, exclusive (default: startofmonth(now()))'
+    required: true
