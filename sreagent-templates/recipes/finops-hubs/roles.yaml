@@ -1,3 +1,9 @@
 # The FinOps Hub Kusto connector uses the agent's system-assigned identity.
 # Its Kusto principal assignment is handled by the canonical deployment path.
-roles: []
+roles:
+  - name: FinOps Hub Kusto cluster viewer
+    type: adx-principal
+    scope: "{{finopsHubClusterUri}}"
+    role: AllDatabasesViewer
+    principal: agent-system
+    assignment_name: finops-hub-kusto

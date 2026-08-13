@@ -438,6 +438,8 @@ fi
 
 UAMI_ID=$(jq -r '.properties.outputs.managedIdentityId.value // empty' "$TMP" 2>/dev/null)
 UAMI_PRINCIPAL=$(az identity show --ids "$UAMI_ID" --query principalId -o tsv 2>/dev/null || echo "")
+AGENT_ID=$(jq -r '.properties.outputs.agentId.value // empty' "$TMP" 2>/dev/null)
+AGENT_SYSTEM_PRINCIPAL=$(az resource show --ids "$AGENT_ID" --api-version 2025-05-01-preview --query identity.principalId -o tsv 2>/dev/null || echo "")
 
 if [[ -n "$ROLES_FILE" && -f "$ROLES_FILE" ]]; then
   echo
@@ -446,9 +448,11 @@ if [[ -n "$ROLES_FILE" && -f "$ROLES_FILE" ]]; then
   echo
 
   python3 -c "
-import yaml, sys, os
+import yaml, sys, os, subprocess
+from urllib.parse import urlparse
 
 uami = '${UAMI_PRINCIPAL}'
+agent_smi = '${AGENT_SYSTEM_PRINCIPAL}'
 sub = '${SUB}'
 rg = '${RG}'
 ag = '${AG}'
@@ -476,18 +480,44 @@ for role in (data.get('roles') or []):
     elif rtype == 'adx-principal':
         scope = role.get('scope', '')
         adx_role = role.get('role', 'Viewer')
+        principal = role.get('principal', 'uami')
+        principal_id = agent_smi if principal == 'agent-system' else uami
         print(f'  Granting ADX role: {name} ({adx_role})')
         parts = scope.split('/databases/')
-        if len(parts) == 2 and uami:
+        if adx_role in ('AllDatabasesViewer', 'AllDatabasesAdmin') and principal_id:
+            cluster_name = (urlparse(scope).hostname or '').split('.')[0]
+            assignment_suffix = role.get('assignment_name', 'cluster')
+            assignment_name = f'sre-agent-{ag}-{assignment_suffix}-{principal_id[:8]}'
+            cluster_rg = subprocess.run(
+                ['az', 'kusto', 'cluster', 'list', '--subscription', sub,
+                 '--query', f\"[?name=='{cluster_name}'].resourceGroup | [0]\", '-o', 'tsv'],
+                capture_output=True, text=True
+            ).stdout.strip()
+            if cluster_name and cluster_rg:
+                result = subprocess.run(
+                    ['az', 'kusto', 'cluster-principal-assignment', 'create',
+                     '--cluster-name', cluster_name, '--resource-group', cluster_rg,
+                     '--principal-id', principal_id, '--principal-type', 'App',
+                     '--role', adx_role, '--principal-assignment-name', assignment_name,
+                     '--subscription', sub, '--only-show-errors'],
+                    capture_output=True, text=True
+                )
+                if result.returncode == 0:
+                    print(f'    ✅ ADX {adx_role} granted on cluster {cluster_name}')
+                else:
+                    print(f'    ⚠ Could not grant ADX {adx_role} on cluster {cluster_name}: {result.stderr.strip()}')
+            else:
+                print(f'    ⚠ Could not resolve Kusto cluster from scope: {scope}')
+        elif len(parts) == 2 and principal_id:
             cluster_url = parts[0]
             db = parts[1]
             # Try to run automatically
-            cmd = f'az kusto database-principal-assignment create --cluster-name \"{cluster_url.split(\"/\")[-1]}\" --database-name \"{db}\" --principal-id \"{uami}\" --principal-type App --role \"{adx_role}\" --principal-assignment-name \"sre-agent-{ag}\" --subscription \"{sub}\" 2>/dev/null || az kusto database add-principal --cluster-name \"{cluster_url.split(\"/\")[-1]}\" --database-name \"{db}\" --value name=\"sre-agent-{ag}\" type=\"App\" app-id=\"{uami}\" role=\"{adx_role}\" 2>/dev/null'
+            cmd = f'az kusto database-principal-assignment create --cluster-name \"{cluster_url.split(\"/\")[-1]}\" --database-name \"{db}\" --principal-id \"{principal_id}\" --principal-type App --role \"{adx_role}\" --principal-assignment-name \"sre-agent-{ag}\" --subscription \"{sub}\" 2>/dev/null || az kusto database add-principal --cluster-name \"{cluster_url.split(\"/\")[-1]}\" --database-name \"{db}\" --value name=\"sre-agent-{ag}\" type=\"App\" app-id=\"{principal_id}\" role=\"{adx_role}\" 2>/dev/null'
             if os.system(cmd) == 0:
                 print(f'    ✅ ADX {adx_role} granted on {db}')
             else:
                 print(f'    ⚠ Could not auto-grant. Run manually:')
-                print(f'    az kusto database add-principal --cluster-name \"{cluster_url.split(\"/\")[-1]}\" --database-name \"{db}\" --value name=\"sre-agent-{ag}\" type=\"App\" app-id=\"{uami}\" role=\"{adx_role}\"')
+                print(f'    az kusto database add-principal --cluster-name \"{cluster_url.split(\"/\")[-1]}\" --database-name \"{db}\" --value name=\"sre-agent-{ag}\" type=\"App\" app-id=\"{principal_id}\" role=\"{adx_role}\"')
         else:
             print(f'    Run manually after deploy — scope: {scope}')
 
