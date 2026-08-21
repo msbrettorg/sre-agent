@@ -91,6 +91,12 @@ spec:
 
     - AKS cluster capacity governance
 
+    - Primary and recovery scale-unit coverage, including temporary upgrade and failover demand
+
+    - Regional diversity against workload-specific recovery, dependency, latency, residency, test, and cost requirements; do not score against a fixed region count
+
+    Use the latest `CapacityMonthlyPlanning` demand forecast and request pipeline as input. Do not independently invent or restate demand when monthly evidence is missing or stale.
+
 
 
 
@@ -122,6 +128,10 @@ spec:
     - Alert coverage complete?
 
     - Scripts and tooling up to date?
+
+    - Accepted capacity risks documented with owners and review dates?
+
+    - Post-change and disaster-recovery drill findings incorporated into placement and commitment decisions?
 
 
 

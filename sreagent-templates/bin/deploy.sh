@@ -207,6 +207,8 @@ fi
 
 # ── Run the deployment with progress visible ──
 TMP=$(mktemp)
+AZ_STDERR=$(mktemp)
+CLEANUP_FILES+=("$TMP" "$AZ_STDERR")
 
 # ── Pre-deploy: auto-create VNet subnet with delegation if networkConfiguration.type=vnet ──
 AGENT_JSON_FILE="${INPUT}/agent.json"
@@ -273,19 +275,24 @@ if az resource show -g "$RG" --resource-type "Microsoft.App/agents" -n "$AG" --q
   SKIP_RBAC="skipRoleAssignments=true"
 fi
 
-az deployment sub create \
-  --location "$LOC" \
-  --name "$NAME" \
-  --template-file "$TEMPLATE" \
-  --parameters "@${FILE}" ${SKIP_RBAC:+--parameters $SKIP_RBAC} \
-  --output json > "$TMP" 2>&1
-AZ_RC=$?
+if az deployment sub create \
+    --location "$LOC" \
+    --name "$NAME" \
+    --template-file "$TEMPLATE" \
+    --parameters "@${FILE}" ${SKIP_RBAC:+--parameters $SKIP_RBAC} \
+    --output json > "$TMP" 2> "$AZ_STDERR"
+then
+  AZ_RC=0
+else
+  AZ_RC=$?
+fi
+cat "$AZ_STDERR" >&2
 cat "$TMP"
 
 # ── Post-deploy: print key links ──
 STATE=$(jq -r '.properties.provisioningState // "?"' "$TMP" 2>/dev/null || echo "Failed")
-# If az exited non-zero but jq can't parse the output, fall back to querying ARM
-if [[ "$STATE" == "?" && $AZ_RC -ne 0 ]]; then
+# Azure CLI may fail to emit parseable JSON even when ARM completed the deployment.
+if [[ "$STATE" == "?" || "$STATE" == "Failed" || "$AZ_RC" -ne 0 ]]; then
   STATE=$(az deployment sub show -n "$NAME" --query 'properties.provisioningState' -o tsv 2>/dev/null || echo "Failed")
 fi
 # ── Colors (if terminal supports it) ──

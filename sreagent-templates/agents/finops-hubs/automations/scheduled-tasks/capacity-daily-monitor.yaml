@@ -35,8 +35,12 @@ spec:
 
     - `vm-quota-usage`: Run with subscription_id and location to get VM family quota usage with at-risk thresholds
     - `capacity-reservation-groups`: Run with subscription_id and resource_group when scoped to list CRGs with instanceView utilization
+
     - `data-freshness-check`: Run with cluster_uri and database to check Hub data staleness
+
     - `non-compute-quotas`: Run with subscription_id and location to get Storage and Network quota usage
+
+    - `ftk-hubs-agent`: Run `resource-graph-query` to inventory AKS node pools, VM sizes, autoscaler bounds, upgrade settings, subnet configuration, and CRG associations
 
 
     ## 1. Quota Health
@@ -51,6 +55,8 @@ spec:
     - Flag any family at >95% — these are imminent blockers
 
     - Check quota groups if configured — report group-level headroom
+
+    - For documented critical workloads, compare remaining headroom with one complete deployable scale unit and flag critical when less than one unit remains, even if percentage thresholds have not been crossed
 
     Ask `azure-capacity-manager` to use `non-compute-quotas` for Storage and Network quota usage so non-compute limits are included in the daily capacity status.
 
@@ -70,13 +76,15 @@ spec:
 
     - Check zone alignment for shared CRGs
 
+    - Label each CRG as reserved-available, consumed, or overallocated; overallocated instances do not inherit the reserved-capacity SLA
+
 
 
 
     ## 3. AKS Node Pool Capacity
 
 
-    For AKS clusters with CRG associations:
+    Ask `ftk-hubs-agent` to inventory AKS node pools and upgrade settings, then ask `azure-capacity-manager` to assess:
 
     - Verify node pool CRG association is still active
 
@@ -84,10 +92,18 @@ spec:
 
     - Report node pool scale events in last 24 hours
 
+    - Calculate temporary upgrade capacity from base nodes and `maxSurge`, including VM-family quota, subnet IP, load-balancer, and CRG headroom
+
+    - Treat unknown node-pool, network, or upgrade settings as insufficient evidence rather than healthy status
+
+    ## 4. Failure Classification and Follow-up
+
+    Classify any recent allocation failure as quota exhaustion, hard access or offer restriction, over-constrained placement, or transient inventory stockout before recommending action. Retry only transient stockouts. If a previously approved quota, access, CRG, or placement change is recorded, rerun the relevant check and report before/after evidence.
 
 
 
-    ## 4. Alert Status
+
+    ## 5. Alert Status
 
 
     Check for any fired alerts in last 24 hours:
@@ -113,6 +129,8 @@ spec:
     - 🟡 WARNING: Any quota at >80% or CRG utilization <50%
 
     - 🟢 HEALTHY: All within thresholds
+
+    Include each evidence source and collection timestamp. Mark evidence older than this daily cadence as STALE and lower confidence.
 
 
     Do not stop until all checks are complete.

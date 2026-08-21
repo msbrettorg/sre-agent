@@ -1,0 +1,6 @@
+name: finops-toolkit
+spec:
+  sourceType: github
+  sourceUrl: microsoft/finops-toolkit
+  owner:
+    name: Microsoft

@@ -17,6 +17,7 @@
       "type": "Mcp"
     }
   ],
+  "allowAdditionalConnectors": true,
   "knowledgeItems": [
     "finops-hub-database-guide",
     "tutorial:-create-and-update-finops-hubs",
@@ -25,10 +26,24 @@
     "understanding-savings-calculations-in-finops-toolkit",
     "finops-hub-data-model",
     "upgrade-a-finops-hubs-instance",
-    "configure-private-networking-in-finops-hubs"
+    "configure-private-networking-in-finops-hubs",
+    "well-architected-capacity-planning",
+    "well-architected-regions-and-zones",
+    "well-architected-disaster-recovery",
+    "azure-quotas-overview",
+    "azure-capacity-reservations",
+    "azure-check-zone-peers",
+    "aks-upgrade-capacity-planning"
   ],
-  "tools": 50,
-  "skills": [],
+  "tools": 51,
+  "skills": [
+    "azure-cost-management"
+  ],
+  "pluginSkills": [
+    "azure-capacity-management",
+    "finops-toolkit"
+  ],
+  "allowAdditionalSkills": true,
   "subagents": [
     "azure-capacity-manager",
     "chief-financial-officer",
@@ -62,5 +77,6 @@
     "StoragePaasGrowthForecast"
   ],
   "responsePlans": [],
+  "allowAdditionalRepos": true,
   "repos": []
 }

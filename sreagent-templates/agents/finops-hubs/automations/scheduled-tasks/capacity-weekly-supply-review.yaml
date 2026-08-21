@@ -36,6 +36,8 @@ spec:
     - `vm-quota-usage`: Run with subscription_id and location to get VM family quota usage with at-risk thresholds
     - `non-compute-quotas`: Run with subscription_id and location to get Storage and Network quota usage
     - `capacity-reservation-groups`: Run with subscription_id and resource_group when scoped to list CRGs with instanceView utilization
+
+    - `zone-mapping`: Run with reference_subscription_id, location, and peer_subscription_ids before cross-subscription zonal placement or shared-CRG decisions
     - `sku-availability`: Ask `azure-capacity-manager` to run with subscription_id and location to get Compute SKU availability and restrictions by default. Use `resource_provider: kusto` with a planned Data Explorer SKU in `sku_filter` to preflight Azure Data Explorer / Kusto eligibility for FinOps Hub analytics deployments; never infer Kusto availability from Compute SKU results.
     - `azure-capacity-manager`: Run `benefit-recommendations` with billing_scope and lookback to get reservation and savings plan recommendations
     - `ftk-database-query`: Run `commitment-utilization-score`, `commitment-discount-waste`, `compute-spend-commitment-coverage`, and `compute-cost-per-core` when Kusto cost evidence is available
@@ -56,6 +58,8 @@ spec:
 
     - Flag subscriptions not yet added to quota groups
 
+    - Report primary headroom and recovery-region or recovery-zone headroom separately, measured in complete workload scale units where workload definitions are available
+
 
 
 
@@ -66,9 +70,11 @@ spec:
 
     - Calculate weekly cost of unused reserved capacity (reserved minus allocated × pay-as-you-go rate)
 
-    - Compare CRG cost against equivalent Azure Reservation or savings plan cost
+    - Calculate net CRG carry cost only after applicable Azure Reservation or savings plan offsets are known
 
     - Identify CRGs that could be rightsized (reduce reservation quantity)
+
+    - Label reserved-available, consumed, and overallocated states; flag overallocated instances as outside the reserved-capacity SLA
 
     - Check for CRGs without matching Azure Reservations (paying both capacity guarantee AND full price)
 
@@ -86,6 +92,10 @@ spec:
     - Verify that planned SKUs are available in the required locations and zones
 
     - Flag any SKU restrictions that could block planned scaling
+
+    - Require a structured fallback SKU, zone, or region with compatibility and deployment-test status for critical workloads
+
+    - Use `zone-mapping` for every cross-subscription zonal or shared-CRG scenario. If mappings are unavailable or stale, report INSUFFICIENT EVIDENCE and do not approve placement.
 
     - For FinOps Hub Data Explorer backend work, ask `azure-capacity-manager` to run `sku-availability` with `resource_provider: kusto` and the planned ADX SKU as `sku_filter`; treat `is_available: false` as a deploy or upgrade blocker.
 
@@ -126,6 +136,8 @@ spec:
     - Benefit recommendation highlights
 
     - Action items for platform, engineering, and finance stakeholders
+
+    - Evidence timestamps, freshness, owner, escalation deadline, and any required post-change validation
 
 
     Use #remember to note key FinOps capacity findings. Use deep investigation if any quota is critically low.

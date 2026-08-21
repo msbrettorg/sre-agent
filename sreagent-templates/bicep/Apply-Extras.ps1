@@ -130,6 +130,7 @@ if ($AgentUami) {
 # ── Probe data-plane token availability ─────────────────────────────────────
 $DpTokenAvailable = $false
 $DpSkippedItems = [System.Collections.Generic.List[string]]::new()
+$GitHubPatInstalled = $false
 
 try {
     $null = az account get-access-token --resource https://azuresre.dev --query accessToken -o tsv 2>$null
@@ -154,6 +155,12 @@ function Get-DpToken {
         throw "Could not get data-plane token (audience https://azuresre.dev)"
     }
     return $tok
+}
+
+function Set-GitHubPat {
+    $body = @{ AuthType = "Pat"; Pat = $env:GITHUB_PAT }
+    $null = Invoke-DataPlaneJson -Method PUT `
+        -Url "$AgentEndpoint/api/v2/github/domains/github_com" -BodyObj $body
 }
 
 # ── Helper: ARM PUT sub-resource with base64-encoded value envelope ─────────
@@ -300,6 +307,89 @@ function DataPlane-PostJson {
     } catch {
         Write-Host "    FAILED - POST $Url"
     }
+}
+
+function Invoke-DataPlaneJson {
+    param(
+        [ValidateSet('GET', 'POST', 'PUT')][string]$Method,
+        [string]$Url,
+        [object]$BodyObj
+    )
+    $token = Get-DpToken
+    $headers = @{
+        Authorization  = "Bearer $token"
+        "Content-Type" = "application/json"
+    }
+    try {
+        if ($Method -eq 'GET') {
+            return Invoke-RestMethod -TimeoutSec 30 -Uri $Url -Method Get -Headers $headers
+        }
+        $bodyJson = $BodyObj | ConvertTo-Json -Compress -Depth 20
+        return Invoke-RestMethod -TimeoutSec 30 -Uri $Url -Method $Method -Headers $headers -Body $bodyJson -ContentType "application/json"
+    } catch {
+        throw "FAILED - $Method $Url`: $($_.Exception.Message)"
+    }
+}
+
+function Get-ResponseItems {
+    param([object]$Response)
+    if ($null -eq $Response) { return @() }
+    if ($Response.PSObject.Properties['value']) { return @($Response.value) }
+    return @($Response)
+}
+
+function Test-PluginInstallation {
+    param(
+        [object]$Installations,
+        [string]$Marketplace,
+        [string]$Plugin,
+        [string[]]$ExpectedSkills
+    )
+    $matches = @(Get-ResponseItems $Installations | Where-Object {
+        $_.spec.marketplaceName -eq $Marketplace -and $_.spec.pluginName -eq $Plugin
+    })
+    if ($matches.Count -ne 1) { return $false }
+
+    $importedSkills = @($matches[0].spec.importedSkills | ForEach-Object {
+        if ($_.PSObject.Properties['sourceSkillName'] -and $_.sourceSkillName) {
+            $_.sourceSkillName
+        } else {
+            $_.skillName
+        }
+    } | Sort-Object)
+    $expected = @($ExpectedSkills | Sort-Object)
+    $skillsMatch = -not (Compare-Object -ReferenceObject $expected -DifferenceObject $importedSkills)
+    return $skillsMatch -and
+        $matches[0].spec.autoUpdate -eq $false -and
+        -not [string]::IsNullOrEmpty($matches[0].spec.sourceCommit)
+}
+
+function Test-DirectPluginInstallation {
+    param(
+        [object]$Installations,
+        [string]$SourceUrl,
+        [string]$Plugin,
+        [string[]]$ExpectedSkills
+    )
+    $matches = @(Get-ResponseItems $Installations | Where-Object {
+        $null -eq $_.spec.marketplaceName -and
+        $_.spec.pluginName -eq $Plugin -and
+        $_.spec.source.repo -eq $SourceUrl
+    })
+    if ($matches.Count -ne 1) { return $false }
+
+    $importedSkills = @($matches[0].spec.importedSkills | ForEach-Object {
+        if ($_.PSObject.Properties['sourceSkillName'] -and $_.sourceSkillName) {
+            $_.sourceSkillName
+        } else {
+            $_.skillName
+        }
+    } | Sort-Object)
+    $expected = @($ExpectedSkills | Sort-Object)
+    $skillsMatch = -not (Compare-Object -ReferenceObject $expected -DifferenceObject $importedSkills)
+    return $skillsMatch -and
+        $matches[0].spec.autoUpdate -eq $false -and
+        -not [string]::IsNullOrEmpty($matches[0].spec.sourceCommit)
 }
 
 # ── Helper: PUT to v2 extendedAgent data-plane (hooks/commonprompts/plugins) ─
@@ -863,11 +953,68 @@ $marketplaces = $extras.plugins.marketplaces
 $mpCount = ($marketplaces | Measure-Object).Count
 if ($mpCount -gt 0) {
     if ($DpTokenAvailable) {
+        if ($env:GITHUB_PAT -and -not $GitHubPatInstalled) {
+            Write-Host "GitHub auth: installing PAT before marketplace registration"
+            try {
+                Set-GitHubPat
+                $GitHubPatInstalled = $true
+                Write-Host "  ok"
+            } catch {
+                throw "FAILED - PUT /api/v2/github/domains/github_com"
+            }
+        }
         Write-Host "plugins.marketplaces: $mpCount"
         $url = "$AgentEndpoint/api/v2/plugins/marketplaces"
+        $existingMarketplaces = Invoke-DataPlaneJson -Method GET -Url $url
         foreach ($mp in $marketplaces) {
             $body = @{ metadata = @{ name = $mp.name }; spec = $mp.spec }
-            DataPlane-PostJson -Label "marketplaces/$($mp.name)" -Url $url -BodyObj $body
+            $existing = @(Get-ResponseItems $existingMarketplaces | Where-Object {
+                $_.metadata.name -eq $mp.name
+            })
+            if ($existing.Count -gt 0) {
+                if ($existing.Count -ne 1 -or
+                    $existing[0].spec.sourceType -ne $mp.spec.sourceType -or
+                    $existing[0].spec.sourceUrl -ne $mp.spec.sourceUrl) {
+                    throw "marketplace/$($mp.name) exists with a different source"
+                }
+                Write-Host "  marketplace/$($mp.name): already registered"
+            } else {
+                Write-Host "  marketplace/$($mp.name): registering"
+                $null = Invoke-DataPlaneJson -Method POST -Url $url -BodyObj $body
+            }
+
+            $encodedName = [uri]::EscapeDataString($mp.name)
+            $resolveUrl = "$url/$encodedName/resolve"
+            $resolveAttempts = if ($env:SRE_PLUGIN_RESOLVE_ATTEMPTS) { [int]$env:SRE_PLUGIN_RESOLVE_ATTEMPTS } else { 24 }
+            $resolveDelay = if ($env:SRE_PLUGIN_RESOLVE_DELAY_SECONDS) { [int]$env:SRE_PLUGIN_RESOLVE_DELAY_SECONDS } else { 5 }
+            $resolved = $false
+            for ($attempt = 1; $attempt -le $resolveAttempts; $attempt++) {
+                try {
+                    $resolveResult = Invoke-DataPlaneJson -Method GET -Url $resolveUrl
+                    if ($resolveResult.success -eq $true) {
+                        $resolved = $true
+                        break
+                    }
+                } catch {
+                    if ($attempt -eq $resolveAttempts) { break }
+                }
+                if ($attempt -lt $resolveAttempts -and $resolveDelay -gt 0) {
+                    Start-Sleep -Seconds $resolveDelay
+                }
+            }
+            if (-not $resolved) {
+                $current = Invoke-DataPlaneJson -Method GET -Url $url
+                $currentMarketplace = @(Get-ResponseItems $current | Where-Object {
+                    $_.metadata.name -eq $mp.name
+                }) | Select-Object -First 1
+                $cloneError = if ($currentMarketplace -and $currentMarketplace.spec.cloneError) {
+                    $currentMarketplace.spec.cloneError
+                } else {
+                    'marketplace did not resolve'
+                }
+                throw "marketplace/$($mp.name): $cloneError"
+            }
+            Write-Host "  marketplace/$($mp.name): resolved"
         }
     } else {
         Write-Host "plugins.marketplaces: $mpCount - WARNING skipped (no data-plane token)"
@@ -885,8 +1032,127 @@ if ($piCount -gt 0) {
         Write-Host "plugins.installations: $piCount"
         $url = "$AgentEndpoint/api/v2/plugins/installations"
         foreach ($inst in $installations) {
-            $body = @{ metadata = @{ name = $inst.name }; spec = $inst.spec }
-            DataPlane-PostJson -Label "installations/$($inst.name)" -Url $url -BodyObj $body
+            $operation = if ($inst.PSObject.Properties['operation']) {
+                $inst.operation
+            } else {
+                'record'
+            }
+            if ($operation -eq 'install-direct') {
+                $sourceUrl = $inst.spec.sourceUrl
+                $pathInRepo = if ($inst.spec.PSObject.Properties['pathInRepo']) {
+                    $inst.spec.pathInRepo
+                } else {
+                    ''
+                }
+                $plugin = $inst.spec.pluginName
+                $expectedSkills = @($inst.spec.expectedSkills | Sort-Object)
+                if ([string]::IsNullOrEmpty($sourceUrl) -or
+                    [string]::IsNullOrEmpty($plugin) -or
+                    $expectedSkills.Count -eq 0) {
+                    throw "installation/$($inst.name) is missing sourceUrl, pluginName, or expectedSkills"
+                }
+
+                $currentInstallations = Invoke-DataPlaneJson -Method GET -Url $url
+                $matches = @(Get-ResponseItems $currentInstallations | Where-Object {
+                    $null -eq $_.spec.marketplaceName -and
+                    $_.spec.pluginName -eq $plugin -and
+                    $_.spec.source.repo -eq $sourceUrl
+                })
+                if ($matches.Count -gt 0) {
+                    if (Test-DirectPluginInstallation -Installations $currentInstallations -SourceUrl $sourceUrl -Plugin $plugin -ExpectedSkills $expectedSkills) {
+                        Write-Host "  installation/$($inst.name): already installed"
+                        continue
+                    }
+                    throw "installation/$($inst.name) exists but doesn't match the required skills or commit pin"
+                }
+
+                Write-Host "  installation/$($inst.name): installing from URL"
+                $null = Invoke-DataPlaneJson -Method POST `
+                    -Url "$AgentEndpoint/api/v2/plugins/install-direct" `
+                    -BodyObj @{ sourceUrl = $sourceUrl; pathInRepo = $pathInRepo }
+
+                $installAttempts = if ($env:SRE_PLUGIN_INSTALL_ATTEMPTS) { [int]$env:SRE_PLUGIN_INSTALL_ATTEMPTS } else { 12 }
+                $installDelay = if ($env:SRE_PLUGIN_INSTALL_DELAY_SECONDS) { [int]$env:SRE_PLUGIN_INSTALL_DELAY_SECONDS } else { 5 }
+                $installed = $false
+                for ($attempt = 1; $attempt -le $installAttempts; $attempt++) {
+                    $currentInstallations = Invoke-DataPlaneJson -Method GET -Url $url
+                    if (Test-DirectPluginInstallation -Installations $currentInstallations -SourceUrl $sourceUrl -Plugin $plugin -ExpectedSkills $expectedSkills) {
+                        $installed = $true
+                        break
+                    }
+                    if ($attempt -lt $installAttempts -and $installDelay -gt 0) {
+                        Start-Sleep -Seconds $installDelay
+                    }
+                }
+                if (-not $installed) {
+                    throw "installation/$($inst.name) wasn't recorded with the expected commit-pinned skills"
+                }
+                Write-Host "  installation/$($inst.name): installed"
+                continue
+            }
+            if ($operation -ne 'install-from-marketplace') {
+                $body = @{ metadata = @{ name = $inst.name }; spec = $inst.spec }
+                DataPlane-PostJson -Label "installations/$($inst.name)" -Url $url -BodyObj $body
+                continue
+            }
+
+            $marketplace = $inst.spec.marketplaceName
+            $plugin = $inst.spec.pluginName
+            $expectedSkills = @($inst.spec.expectedSkills | Sort-Object)
+            $autoUpdate = if ($inst.spec.PSObject.Properties['autoUpdate']) {
+                [bool]$inst.spec.autoUpdate
+            } else {
+                $false
+            }
+            if ([string]::IsNullOrEmpty($marketplace) -or
+                [string]::IsNullOrEmpty($plugin) -or
+                $expectedSkills.Count -eq 0) {
+                throw "installation/$($inst.name) is missing marketplaceName, pluginName, or expectedSkills"
+            }
+
+            $encodedMarketplace = [uri]::EscapeDataString($marketplace)
+            $encodedPlugin = [uri]::EscapeDataString($plugin)
+            $pluginUrl = "$AgentEndpoint/api/v2/plugins/marketplaces/$encodedMarketplace/plugins/$encodedPlugin"
+            $skillsResult = Invoke-DataPlaneJson -Method GET -Url "$pluginUrl/skills"
+            $actualSkills = @($skillsResult.skills | ForEach-Object {
+                if ($_ -is [string]) { $_ } else { $_.name }
+            } | Sort-Object)
+            if (Compare-Object -ReferenceObject $expectedSkills -DifferenceObject $actualSkills) {
+                throw "installation/$($inst.name) would import unexpected skills: $($actualSkills -join ',')"
+            }
+
+            $currentInstallations = Invoke-DataPlaneJson -Method GET -Url $url
+            $matches = @(Get-ResponseItems $currentInstallations | Where-Object {
+                $_.spec.marketplaceName -eq $marketplace -and $_.spec.pluginName -eq $plugin
+            })
+            if ($matches.Count -gt 0) {
+                if (Test-PluginInstallation -Installations $currentInstallations -Marketplace $marketplace -Plugin $plugin -ExpectedSkills $expectedSkills) {
+                    Write-Host "  installation/$($inst.name): already installed"
+                    continue
+                }
+                throw "installation/$($inst.name) exists but doesn't match the required skills, pinning, or auto-update setting"
+            }
+
+            Write-Host "  installation/$($inst.name): installing"
+            $null = Invoke-DataPlaneJson -Method POST -Url "$pluginUrl/install" -BodyObj @{ autoUpdate = $autoUpdate }
+
+            $installAttempts = if ($env:SRE_PLUGIN_INSTALL_ATTEMPTS) { [int]$env:SRE_PLUGIN_INSTALL_ATTEMPTS } else { 12 }
+            $installDelay = if ($env:SRE_PLUGIN_INSTALL_DELAY_SECONDS) { [int]$env:SRE_PLUGIN_INSTALL_DELAY_SECONDS } else { 5 }
+            $installed = $false
+            for ($attempt = 1; $attempt -le $installAttempts; $attempt++) {
+                $currentInstallations = Invoke-DataPlaneJson -Method GET -Url $url
+                if (Test-PluginInstallation -Installations $currentInstallations -Marketplace $marketplace -Plugin $plugin -ExpectedSkills $expectedSkills) {
+                    $installed = $true
+                    break
+                }
+                if ($attempt -lt $installAttempts -and $installDelay -gt 0) {
+                    Start-Sleep -Seconds $installDelay
+                }
+            }
+            if (-not $installed) {
+                throw "installation/$($inst.name) wasn't recorded with the expected commit-pinned skills"
+            }
+            Write-Host "  installation/$($inst.name): installed"
         }
     } else {
         Write-Host "plugins.installations: $piCount - WARNING skipped (no data-plane token)"
@@ -1158,7 +1424,7 @@ if ($HttpTriggerUrl) {
 if ($DpTokenAvailable) {
 
     # 5a. GitHub auth
-    if ($env:GITHUB_PAT) {
+    if ($env:GITHUB_PAT -and -not $GitHubPatInstalled) {
         Write-Host "GitHub auth: installing PAT (no browser needed)"
         try {
             $token = Get-DpToken

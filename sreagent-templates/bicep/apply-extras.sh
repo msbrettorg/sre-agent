@@ -78,6 +78,7 @@ echo "Agent endpoint: ${AGENT_ENDPOINT}"
 # ---------------------------------------------------------------------------
 DP_TOKEN_AVAILABLE=false
 DP_SKIPPED_ITEMS=()
+GITHUB_PAT_INSTALLED=false
 if az account get-access-token --resource https://azuresre.dev --query accessToken -o tsv > /dev/null 2>&1; then
   DP_TOKEN_AVAILABLE=true
   echo "Data-plane:     token available"
@@ -214,8 +215,72 @@ dataplane_post_json() {
   fi
 }
 
+dataplane_request_json() {
+  local method="$1" url="$2" body_json="${3:-}"
+  local token result status response
+  token=$(_dp_token) || { echo "    FAILED - could not get data-plane token" >&2; return 1; }
+
+  local curl_args=(-sS -w $'\n%{http_code}' -X "$method" "$url"
+    -H "Authorization: Bearer ${token}" -H "Content-Type: application/json")
+  [[ "$method" != "GET" ]] && curl_args+=(--data "$body_json")
+  result=$(curl "${curl_args[@]}") || {
+    echo "    FAILED - ${method} ${url}" >&2
+    return 1
+  }
+  status="${result##*$'\n'}"
+  response="${result%$'\n'*}"
+  if [[ "$status" =~ ^2[0-9][0-9]$ ]]; then
+    [[ -n "$response" ]] && printf '%s\n' "$response" || printf '{}\n'
+    return 0
+  fi
+  echo "    FAILED - ${method} ${url} (HTTP ${status})" >&2
+  [[ -n "$response" ]] && echo "$response" >&2
+  return 1
+}
+
+plugin_installation_matches() {
+  local installations="$1" marketplace="$2" plugin="$3" expected_skills="$4"
+  jq -e --arg marketplace "$marketplace" --arg plugin "$plugin" --argjson expected "$expected_skills" '
+    (if type == "array" then . else (.value // []) end
+      | map(select(
+          .spec.marketplaceName == $marketplace and
+          .spec.pluginName == $plugin
+        ))) as $matches
+    | ($matches | length) == 1
+      and (($matches[0].spec.importedSkills // []
+        | map(.sourceSkillName // .skillName)
+        | sort) == ($expected | sort))
+      and ($matches[0].spec.autoUpdate == false)
+      and (($matches[0].spec.sourceCommit // "") | length > 0)
+  ' >/dev/null <<<"$installations"
+}
+
+direct_plugin_installation_matches() {
+  local installations="$1" source_url="$2" plugin="$3" expected_skills="$4"
+  jq -e --arg source_url "$source_url" --arg plugin "$plugin" --argjson expected "$expected_skills" '
+    (if type == "array" then . else (.value // []) end
+      | map(select(
+          (.spec.marketplaceName // null) == null and
+          .spec.pluginName == $plugin and
+          .spec.source.repo == $source_url
+        ))) as $matches
+    | ($matches | length) == 1
+      and (($matches[0].spec.importedSkills // []
+        | map(.sourceSkillName // .skillName)
+        | sort) == ($expected | sort))
+      and ($matches[0].spec.autoUpdate == false)
+      and (($matches[0].spec.sourceCommit // "") | length > 0)
+  ' >/dev/null <<<"$installations"
+}
+
 # Reusable: get a data-plane bearer (defined here so multipart helper can use it)
 _dp_token() { az account get-access-token --resource https://azuresre.dev --query accessToken -o tsv 2>/dev/null; }
+
+configure_github_pat() {
+  local body
+  body=$(jq -nc --arg pat "$GITHUB_PAT" '{AuthType:"Pat",Pat:$pat}')
+  dataplane_request_json PUT "${AGENT_ENDPOINT}/api/v2/github/domains/github_com" "$body" >/dev/null
+}
 
 # ---------------------------------------------------------------------------
 # Helper: PUT to v2 extendedAgent dataplane (skills/subagents/hooks/commonprompts/etc.).
@@ -663,12 +728,66 @@ fi
 count=$(jq '.plugins.marketplaces // [] | length' "$FILE")
 if [[ "$count" -gt 0 ]]; then
   if [[ "$DP_TOKEN_AVAILABLE" == "true" ]]; then
+    if [[ -n "${GITHUB_PAT:-}" && "$GITHUB_PAT_INSTALLED" != "true" ]]; then
+      echo "GitHub auth: installing PAT before marketplace registration"
+      if configure_github_pat; then
+        GITHUB_PAT_INSTALLED=true
+        echo "  ok"
+      else
+        echo "  FAILED - PUT /api/v2/github/domains/github_com" >&2
+        exit 1
+      fi
+    fi
     echo "plugins.marketplaces: ${count}"
     url="${AGENT_ENDPOINT}/api/v2/plugins/marketplaces"
+    existing_marketplaces=$(dataplane_request_json GET "$url")
     for i in $(seq 0 $((count - 1))); do
-      body=$(jq -c --argjson i "$i" '{ metadata: { name: .plugins.marketplaces[$i].name }, spec: .plugins.marketplaces[$i].spec }' "$FILE")
       name=$(jq -r --argjson i "$i" '.plugins.marketplaces[$i].name' "$FILE")
-      dataplane_post_json "marketplaces/${name}" "$url" "$body"
+      body=$(jq -c --argjson i "$i" '{ metadata: { name: .plugins.marketplaces[$i].name }, spec: .plugins.marketplaces[$i].spec }' "$FILE")
+      source_type=$(jq -r --argjson i "$i" '.plugins.marketplaces[$i].spec.sourceType' "$FILE")
+      source_url=$(jq -r --argjson i "$i" '.plugins.marketplaces[$i].spec.sourceUrl' "$FILE")
+      existing=$(jq -c --arg name "$name" '
+        (if type == "array" then . else (.value // []) end)
+        | map(select(.metadata.name == $name))
+      ' <<<"$existing_marketplaces")
+      if [[ "$(jq 'length' <<<"$existing")" -gt 0 ]]; then
+        if ! jq -e --arg source_type "$source_type" --arg source_url "$source_url" '
+          length == 1
+          and .[0].spec.sourceType == $source_type
+          and .[0].spec.sourceUrl == $source_url
+        ' >/dev/null <<<"$existing"; then
+          echo "    FAILED - marketplace/${name} exists with a different source" >&2
+          exit 1
+        fi
+        echo "  marketplace/${name}: already registered"
+      else
+        echo "  marketplace/${name}: registering"
+        dataplane_request_json POST "$url" "$body" >/dev/null
+      fi
+
+      encoded_name=$(printf %s "$name" | jq -sRr @uri)
+      resolve_url="${url}/${encoded_name}/resolve"
+      resolved=false
+      attempts="${SRE_PLUGIN_RESOLVE_ATTEMPTS:-24}"
+      delay="${SRE_PLUGIN_RESOLVE_DELAY_SECONDS:-5}"
+      for attempt in $(seq 1 "$attempts"); do
+        if resolve_result=$(dataplane_request_json GET "$resolve_url" 2>/dev/null) &&
+           jq -e '.success == true' >/dev/null <<<"$resolve_result"; then
+          resolved=true
+          break
+        fi
+        [[ "$attempt" -lt "$attempts" && "$delay" -gt 0 ]] && sleep "$delay"
+      done
+      if [[ "$resolved" != "true" ]]; then
+        current=$(dataplane_request_json GET "$url" 2>/dev/null || echo '{}')
+        clone_error=$(jq -r --arg name "$name" '
+          (if type == "array" then . else (.value // []) end)
+          | map(select(.metadata.name == $name))[0].spec.cloneError // "marketplace did not resolve"
+        ' <<<"$current")
+        echo "    FAILED - marketplace/${name}: ${clone_error}" >&2
+        exit 1
+      fi
+      echo "  marketplace/${name}: resolved"
     done
   else
     echo "plugins.marketplaces: ${count} — ⚠ skipped (no data-plane token)"
@@ -683,9 +802,129 @@ if [[ "$count" -gt 0 ]]; then
     echo "plugins.installations: ${count}"
     url="${AGENT_ENDPOINT}/api/v2/plugins/installations"
     for i in $(seq 0 $((count - 1))); do
-      body=$(jq -c --argjson i "$i" '{ metadata: { name: .plugins.installations[$i].name }, spec: .plugins.installations[$i].spec }' "$FILE")
       name=$(jq -r --argjson i "$i" '.plugins.installations[$i].name' "$FILE")
-      dataplane_post_json "installations/${name}" "$url" "$body"
+      operation=$(jq -r --argjson i "$i" '.plugins.installations[$i].operation // "record"' "$FILE")
+      if [[ "$operation" == "install-direct" ]]; then
+        source_url=$(jq -r --argjson i "$i" '.plugins.installations[$i].spec.sourceUrl' "$FILE")
+        path_in_repo=$(jq -r --argjson i "$i" '.plugins.installations[$i].spec.pathInRepo // ""' "$FILE")
+        plugin=$(jq -r --argjson i "$i" '.plugins.installations[$i].spec.pluginName' "$FILE")
+        expected_skills=$(jq -c --argjson i "$i" '.plugins.installations[$i].spec.expectedSkills // [] | sort' "$FILE")
+        if [[ -z "$source_url" || "$source_url" == "null" ||
+              -z "$plugin" || "$plugin" == "null" ||
+              "$(jq 'length' <<<"$expected_skills")" -eq 0 ]]; then
+          echo "    FAILED - installation/${name} is missing sourceUrl, pluginName, or expectedSkills" >&2
+          exit 1
+        fi
+
+        installations=$(dataplane_request_json GET "$url")
+        match_count=$(jq --arg source_url "$source_url" --arg plugin "$plugin" '
+          (if type == "array" then . else (.value // []) end)
+          | map(select(
+              (.spec.marketplaceName // null) == null and
+              .spec.pluginName == $plugin and
+              .spec.source.repo == $source_url
+            ))
+          | length
+        ' <<<"$installations")
+        if [[ "$match_count" -gt 0 ]]; then
+          if direct_plugin_installation_matches "$installations" "$source_url" "$plugin" "$expected_skills"; then
+            echo "  installation/${name}: already installed"
+            continue
+          fi
+          echo "    FAILED - installation/${name} exists but doesn't match the required skills or commit pin" >&2
+          exit 1
+        fi
+
+        echo "  installation/${name}: installing from URL"
+        install_body=$(jq -nc --arg sourceUrl "$source_url" --arg pathInRepo "$path_in_repo" \
+          '{sourceUrl: $sourceUrl, pathInRepo: $pathInRepo}')
+        dataplane_request_json POST "${AGENT_ENDPOINT}/api/v2/plugins/install-direct" "$install_body" >/dev/null
+
+        installed=false
+        attempts="${SRE_PLUGIN_INSTALL_ATTEMPTS:-12}"
+        delay="${SRE_PLUGIN_INSTALL_DELAY_SECONDS:-5}"
+        for attempt in $(seq 1 "$attempts"); do
+          installations=$(dataplane_request_json GET "$url")
+          if direct_plugin_installation_matches "$installations" "$source_url" "$plugin" "$expected_skills"; then
+            installed=true
+            break
+          fi
+          [[ "$attempt" -lt "$attempts" && "$delay" -gt 0 ]] && sleep "$delay"
+        done
+        if [[ "$installed" != "true" ]]; then
+          echo "    FAILED - installation/${name} wasn't recorded with the expected commit-pinned skills" >&2
+          exit 1
+        fi
+        echo "  installation/${name}: installed"
+        continue
+      fi
+      if [[ "$operation" != "install-from-marketplace" ]]; then
+        body=$(jq -c --argjson i "$i" '{ metadata: { name: .plugins.installations[$i].name }, spec: .plugins.installations[$i].spec }' "$FILE")
+        dataplane_post_json "installations/${name}" "$url" "$body"
+        continue
+      fi
+
+      marketplace=$(jq -r --argjson i "$i" '.plugins.installations[$i].spec.marketplaceName' "$FILE")
+      plugin=$(jq -r --argjson i "$i" '.plugins.installations[$i].spec.pluginName' "$FILE")
+      expected_skills=$(jq -c --argjson i "$i" '.plugins.installations[$i].spec.expectedSkills // [] | sort' "$FILE")
+      auto_update=$(jq -r --argjson i "$i" '.plugins.installations[$i].spec.autoUpdate // false' "$FILE")
+      if [[ -z "$marketplace" || "$marketplace" == "null" ||
+            -z "$plugin" || "$plugin" == "null" ||
+            "$(jq 'length' <<<"$expected_skills")" -eq 0 ]]; then
+        echo "    FAILED - installation/${name} is missing marketplaceName, pluginName, or expectedSkills" >&2
+        exit 1
+      fi
+
+      encoded_marketplace=$(printf %s "$marketplace" | jq -sRr @uri)
+      encoded_plugin=$(printf %s "$plugin" | jq -sRr @uri)
+      plugin_url="${AGENT_ENDPOINT}/api/v2/plugins/marketplaces/${encoded_marketplace}/plugins/${encoded_plugin}"
+      skills_result=$(dataplane_request_json GET "${plugin_url}/skills")
+      actual_skills=$(jq -c '
+        [.skills[]? | if type == "string" then . else .name end] | sort
+      ' <<<"$skills_result")
+      if [[ "$actual_skills" != "$expected_skills" ]]; then
+        echo "    FAILED - installation/${name} would import unexpected skills: ${actual_skills}" >&2
+        exit 1
+      fi
+
+      installations=$(dataplane_request_json GET "$url")
+      match_count=$(jq --arg marketplace "$marketplace" --arg plugin "$plugin" '
+        (if type == "array" then . else (.value // []) end)
+        | map(select(
+            .spec.marketplaceName == $marketplace and
+            .spec.pluginName == $plugin
+          ))
+        | length
+      ' <<<"$installations")
+      if [[ "$match_count" -gt 0 ]]; then
+        if plugin_installation_matches "$installations" "$marketplace" "$plugin" "$expected_skills"; then
+          echo "  installation/${name}: already installed"
+          continue
+        fi
+        echo "    FAILED - installation/${name} exists but doesn't match the required skills, pinning, or auto-update setting" >&2
+        exit 1
+      fi
+
+      echo "  installation/${name}: installing"
+      install_body=$(jq -nc --argjson autoUpdate "$auto_update" '{autoUpdate: $autoUpdate}')
+      dataplane_request_json POST "${plugin_url}/install" "$install_body" >/dev/null
+
+      installed=false
+      attempts="${SRE_PLUGIN_INSTALL_ATTEMPTS:-12}"
+      delay="${SRE_PLUGIN_INSTALL_DELAY_SECONDS:-5}"
+      for attempt in $(seq 1 "$attempts"); do
+        installations=$(dataplane_request_json GET "$url")
+        if plugin_installation_matches "$installations" "$marketplace" "$plugin" "$expected_skills"; then
+          installed=true
+          break
+        fi
+        [[ "$attempt" -lt "$attempts" && "$delay" -gt 0 ]] && sleep "$delay"
+      done
+      if [[ "$installed" != "true" ]]; then
+        echo "    FAILED - installation/${name} wasn't recorded with the expected commit-pinned skills" >&2
+        exit 1
+      fi
+      echo "  installation/${name}: installed"
     done
   else
     echo "plugins.installations: ${count} — ⚠ skipped (no data-plane token)"
@@ -1132,7 +1371,7 @@ if [[ "$DP_TOKEN_AVAILABLE" == "true" ]]; then
 # 5a. GitHub auth
 #   - GITHUB_PAT set  → install PAT silently (no browser)
 #   - GITHUB_PAT unset → print OAuth login URL at the end (browser sign-in, no secret in env)
-if [[ -n "${GITHUB_PAT:-}" ]]; then
+if [[ -n "${GITHUB_PAT:-}" && "$GITHUB_PAT_INSTALLED" != "true" ]]; then
   echo "GitHub auth: installing PAT (no browser needed)"
   TOKEN=$(_dp_token)
   if curl -sS -f -X PUT "${AGENT_ENDPOINT}/api/v2/github/domains/github.com" \

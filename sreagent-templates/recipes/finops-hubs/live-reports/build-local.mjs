@@ -43,10 +43,14 @@ if (!/^[A-Za-z0-9_.-]+$/.test(database)) {
   throw new Error("KUSTO_DATABASE contains unsupported characters.");
 }
 
-const [sourceHtml, bridgeScript] = await Promise.all([
+const [rawSourceHtml, bridgeScript] = await Promise.all([
   readFile(sourcePath, "utf8"),
   readFile(bridgePath, "utf8"),
 ]);
+
+// The portable report may be stored with CRLF endings depending on how it was
+// exported or checked out. Normalize to LF so the literal markers above match.
+const sourceHtml = rawSourceHtml.replaceAll("\r\n", "\n");
 if (bridgeScript.includes("</script>")) {
   throw new Error("The local bridge contains an unsafe closing script tag.");
 }

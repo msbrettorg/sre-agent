@@ -53,6 +53,8 @@ spec:
 
     - Seasonal patterns (if detectable)
 
+    Translate demand into complete deployable scale units or deployment stamps by subscription, region, zone, SKU family, and dependent service. Include normal demand plus temporary onboarding, upgrade, replacement, seasonal, and failover demand.
+
 
     Cross-reference with business targets:
 
@@ -78,6 +80,8 @@ spec:
 
     - Estimated lead times for each request type
 
+    Compare the forecast horizon with the slowest applicable region-access, zonal-enablement, quota, and capacity-reservation lead time. Report days of runway, request or ticket status, ticket age, owner, escalation deadline, and INSUFFICIENT HORIZON when demand can bind before the prerequisite is cleared.
+
 
 
 
@@ -95,6 +99,10 @@ spec:
     - CRG sharing opportunities across subscriptions
 
     - Overallocation policy review
+
+    - Primary and recovery scale-unit coverage, including temporary surge and failover quantities
+
+    - Fallback SKU, zone, and region compatibility plus latest deployment-test status
 
 
 
@@ -128,6 +136,10 @@ spec:
 
     - Any post-incident reviews needed from scaling failures?
 
+    - Were previously approved capacity changes revalidated with before/after evidence?
+
+    Trigger an on-demand capacity resilience preflight between monthly runs for launches, onboarding waves, new stamps or regions, architecture or failover changes, acquisitions, seasonal peaks, large scale events, and allocation failures.
+
 
 
 
@@ -145,6 +157,8 @@ spec:
     - Governance compliance scorecard
 
     - Recommended actions with owners and deadlines
+
+    - Evidence timestamps, freshness, confidence, days of runway, and post-change validation status
 
 
     Use deep investigation for any critical capacity gaps. Use #remember to note key capacity findings.

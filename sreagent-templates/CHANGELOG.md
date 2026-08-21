@@ -11,6 +11,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Strengthened the `finops-hubs` capacity-resilience contract with deployable
+  primary and recovery scale units, temporary demand, allocation-failure
+  classification, AKS upgrade readiness, public Azure grounding, and a
+  read-only cross-subscription zone-mapping tool.
+- Made the `finops-hubs` capacity, cost-management, and FinOps Toolkit skills
+  reproducible through the official azcapman marketplace, the FinOps Toolkit
+  plugin's direct URL, and one pinned official standalone skill.
+- Applied GitHub authentication before marketplace registration so public
+  plugin sources resolve during unattended deployments.
+
+### Fixed
+- Preserved the requested HTTP method in PowerShell data-plane calls so GitHub
+  PAT configuration uses `PUT` instead of falling through to `POST`.
+- Kept Azure CLI warnings separate from deployment JSON so successful ARM
+  deployments aren't reported as failed.
+
+### Testing
+- Added focused four-backend dry-run coverage for the `finops-hubs` recipe.
+
 ## [1.0.0] — 2026-05-07
 
 ### Deploy Backends

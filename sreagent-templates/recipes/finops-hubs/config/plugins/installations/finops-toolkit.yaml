@@ -1,0 +1,9 @@
+name: finops-toolkit-microsoft-finops-toolkit
+operation: install-direct
+spec:
+  sourceUrl: microsoft/finops-toolkit
+  pathInRepo: src/templates/agent-plugin
+  pluginName: microsoft-finops-toolkit
+  expectedSkills:
+    - finops-toolkit
+  autoUpdate: false

@@ -127,7 +127,6 @@ CONN_CT=$(echo "$CONNECTORS" | jq '.value | length')
 CONN_HEALTHY=$(echo "$CONNECTORS" | jq '[.value[] | select(.properties.provisioningState == "Succeeded")] | length')
 CONN_ERRORED=$(echo "$CONNECTORS" | jq '[.value[] | select(.properties.provisioningState != "Succeeded" and .properties.provisioningState != "Running")] | length')
 EXP_CONN_CT=$(exp '.connectors | length' "-")
-check "Connectors (total)" "$CONN_CT" "$EXP_CONN_CT"
 check "Connectors (healthy)" "$CONN_HEALTHY" "$CONN_CT"
 # Show errored connectors explicitly
 if [[ "$CONN_ERRORED" -gt 0 ]]; then
@@ -136,17 +135,38 @@ if [[ "$CONN_ERRORED" -gt 0 ]]; then
   FAIL=$((FAIL + 1))
 fi
 CONN_NAMES=$(echo "$CONNECTORS" | jq -r '.value[].name' 2>/dev/null | sort | tr '\n' ', ' | sed 's/,$//')
-EXP_CONN_NAMES=$(exp_list '.connectors[].name')
-[[ -n "$EXP_CONN_NAMES" ]] && check "Connector names" "$CONN_NAMES" "$EXP_CONN_NAMES" || RESULTS="${RESULTS}\n  Connector names|${CONN_NAMES}|—|"
+EXP_CONN_NAMES=$(exp_list '[.connectors[].name]')
+ALLOW_ADDITIONAL_CONNECTORS=$(exp '.allowAdditionalConnectors' "false")
+if [[ "$ALLOW_ADDITIONAL_CONNECTORS" == "true" && -n "$EXPECTED_CONFIG" ]]; then
+  ACTUAL_CONN_LIST=$(echo "$CONNECTORS" | jq -r '.value[].name' 2>/dev/null | sort -u)
+  EXPECTED_CONN_LIST=$(echo "$EXPECTED_CONFIG" | jq -r '.connectors[].name' 2>/dev/null | sort -u)
+  REQUIRED_CONN_NAMES=$(comm -12 <(printf '%s\n' "$EXPECTED_CONN_LIST") <(printf '%s\n' "$ACTUAL_CONN_LIST") | paste -sd, -)
+  REQUIRED_CONN_CT=$(comm -12 <(printf '%s\n' "$EXPECTED_CONN_LIST") <(printf '%s\n' "$ACTUAL_CONN_LIST") | grep -c . || true)
+  check "Required connectors" "$REQUIRED_CONN_CT" "$EXP_CONN_CT"
+  [[ -n "$EXP_CONN_NAMES" ]] && check "Required connector names" "$REQUIRED_CONN_NAMES" "$EXP_CONN_NAMES" || RESULTS="${RESULTS}\n  Connector names|${CONN_NAMES}|—|"
+else
+  check "Connectors (total)" "$CONN_CT" "$EXP_CONN_CT"
+  [[ -n "$EXP_CONN_NAMES" ]] && check "Connector names" "$CONN_NAMES" "$EXP_CONN_NAMES" || RESULTS="${RESULTS}\n  Connector names|${CONN_NAMES}|—|"
+fi
 
 # ── Skills ──
 SKILLS=$(dp_get "/api/v1/extendedAgent/skills")
 SKILL_CT=$(echo "$SKILLS" | jq 'if type == "array" then length elif .value then (.value | length) else 0 end' 2>/dev/null || echo 0)
 SKILL_NAMES=$(echo "$SKILLS" | jq -r '(if type == "array" then . elif .value then .value else [] end)[].name' 2>/dev/null | sort | tr '\n' ', ' | sed 's/,$//')
-EXP_SKILL_CT=$(exp '.skills | length' "-")
-EXP_SKILL_NAMES=$(exp_list '.skills')
-check "Skills" "$SKILL_CT" "$EXP_SKILL_CT"
-[[ -n "$EXP_SKILL_NAMES" ]] && check "Skill names" "$SKILL_NAMES" "$EXP_SKILL_NAMES" || RESULTS="${RESULTS}\n  Skill names|${SKILL_NAMES}|—|"
+EXP_SKILL_CT=$(exp '((.skills // []) + (.pluginSkills // [])) | length' "-")
+EXP_SKILL_NAMES=$(exp_list '((.skills // []) + (.pluginSkills // []))')
+ALLOW_ADDITIONAL_SKILLS=$(exp '.allowAdditionalSkills' "false")
+if [[ "$ALLOW_ADDITIONAL_SKILLS" == "true" && -n "$EXPECTED_CONFIG" ]]; then
+  ACTUAL_SKILL_LIST=$(echo "$SKILLS" | jq -r '(if type == "array" then . elif .value then .value else [] end)[].name' 2>/dev/null | sort -u)
+  EXPECTED_SKILL_LIST=$(echo "$EXPECTED_CONFIG" | jq -r '((.skills // []) + (.pluginSkills // []))[]?' 2>/dev/null | sort -u)
+  REQUIRED_SKILL_NAMES=$(comm -12 <(printf '%s\n' "$EXPECTED_SKILL_LIST") <(printf '%s\n' "$ACTUAL_SKILL_LIST") | paste -sd, -)
+  REQUIRED_SKILL_CT=$(comm -12 <(printf '%s\n' "$EXPECTED_SKILL_LIST") <(printf '%s\n' "$ACTUAL_SKILL_LIST") | grep -c . || true)
+  check "Required skills" "$REQUIRED_SKILL_CT" "$EXP_SKILL_CT"
+  [[ -n "$EXP_SKILL_NAMES" ]] && check "Required skill names" "$REQUIRED_SKILL_NAMES" "$EXP_SKILL_NAMES" || RESULTS="${RESULTS}\n  Skill names|${SKILL_NAMES}|—|"
+else
+  check "Skills" "$SKILL_CT" "$EXP_SKILL_CT"
+  [[ -n "$EXP_SKILL_NAMES" ]] && check "Skill names" "$SKILL_NAMES" "$EXP_SKILL_NAMES" || RESULTS="${RESULTS}\n  Skill names|${SKILL_NAMES}|—|"
+fi
 
 # ── Subagents ──
 SUBAGENTS=$(dp_get "/api/v2/extendedAgent/agents")
@@ -208,8 +228,18 @@ REPO_CT=$(echo "$REPOS" | jq '.value // . | if type == "array" then length else 
 REPO_NAMES=$(echo "$REPOS" | jq -r '(.value // .)[].name' 2>/dev/null | sort | tr '\n' ', ' | sed 's/,$//')
 EXP_REPO_CT=$(exp '.repos | length' "-")
 EXP_REPO_NAMES=$(exp_list '.repos')
-check "Repos" "$REPO_CT" "$EXP_REPO_CT"
-[[ -n "$EXP_REPO_NAMES" ]] && check "Repo names" "$REPO_NAMES" "$EXP_REPO_NAMES" || RESULTS="${RESULTS}\n  Repo names|${REPO_NAMES}|—|"
+ALLOW_ADDITIONAL_REPOS=$(exp '.allowAdditionalRepos' "false")
+if [[ "$ALLOW_ADDITIONAL_REPOS" == "true" && -n "$EXPECTED_CONFIG" ]]; then
+  ACTUAL_REPO_LIST=$(echo "$REPOS" | jq -r '(.value // .)[].name' 2>/dev/null | sort -u)
+  EXPECTED_REPO_LIST=$(echo "$EXPECTED_CONFIG" | jq -r '.repos[]?' 2>/dev/null | sort -u)
+  REQUIRED_REPO_NAMES=$(comm -12 <(printf '%s\n' "$EXPECTED_REPO_LIST") <(printf '%s\n' "$ACTUAL_REPO_LIST") | paste -sd, -)
+  REQUIRED_REPO_CT=$(comm -12 <(printf '%s\n' "$EXPECTED_REPO_LIST") <(printf '%s\n' "$ACTUAL_REPO_LIST") | grep -c . || true)
+  check "Required repos" "$REQUIRED_REPO_CT" "$EXP_REPO_CT"
+  [[ -n "$EXP_REPO_NAMES" ]] && check "Required repo names" "$REQUIRED_REPO_NAMES" "$EXP_REPO_NAMES" || RESULTS="${RESULTS}\n  Repo names|${REPO_NAMES}|—|"
+else
+  check "Repos" "$REPO_CT" "$EXP_REPO_CT"
+  [[ -n "$EXP_REPO_NAMES" ]] && check "Repo names" "$REPO_NAMES" "$EXP_REPO_NAMES" || RESULTS="${RESULTS}\n  Repo names|${REPO_NAMES}|—|"
+fi
 
 # ── Print results ──
 echo ""

@@ -206,13 +206,23 @@ $ConnHealthy  = $Connectors | Invoke-Jq -Filter '[.value[] | select(.properties.
 $ConnNames    = ($Connectors | Invoke-Jq -Raw -Filter '.value[].name' | Sort-Object) -join ','
 $ExpConnCt    = Get-Exp '.connectors | length'
 $ExpConnNames = Get-ExpList '[.connectors[].name]'
+$AllowAdditionalConnectors = Get-Exp '.allowAdditionalConnectors' 'false'
 
-Add-Check 'Connectors (total)'   $ConnCt      $ExpConnCt
 Add-Check 'Connectors (healthy)' $ConnHealthy  $ConnCt
-if ($ExpConnNames) {
-    Add-Check 'Connector names' $ConnNames $ExpConnNames
+if ($AllowAdditionalConnectors -eq 'true' -and $ExpectedConfig) {
+    $connectorPayload = $Connectors | ConvertFrom-Json
+    $actualConnectorNames = @($connectorPayload.value.name | Sort-Object -Unique)
+    $expectedConnectorNames = @(($ExpectedConfig | ConvertFrom-Json).connectors.name | Sort-Object -Unique)
+    $requiredConnectorNames = @($expectedConnectorNames | Where-Object { $actualConnectorNames -contains $_ })
+    Add-Check 'Required connectors' ([string]$requiredConnectorNames.Count) ([string]$expectedConnectorNames.Count)
+    Add-Check 'Required connector names' ($requiredConnectorNames -join ',') ($expectedConnectorNames -join ',')
 } else {
-    Add-InfoRow 'Connector names' $ConnNames
+    Add-Check 'Connectors (total)' $ConnCt $ExpConnCt
+    if ($ExpConnNames) {
+        Add-Check 'Connector names' $ConnNames $ExpConnNames
+    } else {
+        Add-InfoRow 'Connector names' $ConnNames
+    }
 }
 
 # ─────────────────────────── Skills ───────────────────────────
@@ -221,14 +231,26 @@ $Skills   = Invoke-Dp '/api/v1/extendedAgent/skills'
 $SkillCt  = $Skills | Invoke-Jq -Filter 'if type == "array" then length elif .value then (.value | length) else 0 end'
 if (-not $SkillCt) { $SkillCt = '0' }
 $SkillNames   = ($Skills | Invoke-Jq -Raw -Filter '(if type == "array" then . elif .value then .value else [] end)[].name' | Sort-Object) -join ','
-$ExpSkillCt   = Get-Exp '.skills | length'
-$ExpSkillNames = Get-ExpList '.skills'
+$ExpSkillCt   = Get-Exp '((.skills // []) + (.pluginSkills // [])) | length'
+$ExpSkillNames = Get-ExpList '((.skills // []) + (.pluginSkills // []))'
+$AllowAdditionalSkills = Get-Exp '.allowAdditionalSkills' 'false'
 
-Add-Check 'Skills' $SkillCt $ExpSkillCt
-if ($ExpSkillNames) {
-    Add-Check 'Skill names' $SkillNames $ExpSkillNames
+if ($AllowAdditionalSkills -eq 'true' -and $ExpectedConfig) {
+    $skillPayload = $Skills | ConvertFrom-Json
+    $actualSkillItems = if ($skillPayload -is [array]) { @($skillPayload) } else { @($skillPayload.value) }
+    $actualSkillNames = @($actualSkillItems.name | Sort-Object -Unique)
+    $expectedPayload = $ExpectedConfig | ConvertFrom-Json
+    $expectedSkillNames = @(@($expectedPayload.skills) + @($expectedPayload.pluginSkills) | Sort-Object -Unique)
+    $requiredSkillNames = @($expectedSkillNames | Where-Object { $actualSkillNames -contains $_ })
+    Add-Check 'Required skills' ([string]$requiredSkillNames.Count) ([string]$expectedSkillNames.Count)
+    Add-Check 'Required skill names' ($requiredSkillNames -join ',') ($expectedSkillNames -join ',')
 } else {
-    Add-InfoRow 'Skill names' $SkillNames
+    Add-Check 'Skills' $SkillCt $ExpSkillCt
+    if ($ExpSkillNames) {
+        Add-Check 'Skill names' $SkillNames $ExpSkillNames
+    } else {
+        Add-InfoRow 'Skill names' $SkillNames
+    }
 }
 
 # ─────────────────────────── Subagents ───────────────────────────
@@ -328,12 +350,27 @@ if (-not $RepoCt) { $RepoCt = '0' }
 $RepoNames    = ($Repos | Invoke-Jq -Raw -Filter '(.value // .)[].name' | Sort-Object) -join ','
 $ExpRepoCt    = Get-Exp '.repos | length'
 $ExpRepoNames = Get-ExpList '.repos'
+$AllowAdditionalRepos = Get-Exp '.allowAdditionalRepos' 'false'
 
-Add-Check 'Repos' $RepoCt $ExpRepoCt
-if ($ExpRepoNames) {
-    Add-Check 'Repo names' $RepoNames $ExpRepoNames
+if ($AllowAdditionalRepos -eq 'true' -and $ExpectedConfig) {
+    $repoPayload = $Repos | ConvertFrom-Json
+    $actualRepoItems = if ($repoPayload -is [array]) { @($repoPayload) } else { @($repoPayload.value) }
+    $actualRepoNames = @($actualRepoItems.name | Sort-Object -Unique)
+    $expectedRepoNames = @(($ExpectedConfig | ConvertFrom-Json).repos | Sort-Object -Unique)
+    $requiredRepoNames = @($expectedRepoNames | Where-Object { $actualRepoNames -contains $_ })
+    Add-Check 'Required repos' ([string]$requiredRepoNames.Count) ([string]$expectedRepoNames.Count)
+    if ($expectedRepoNames.Count -gt 0) {
+        Add-Check 'Required repo names' ($requiredRepoNames -join ',') ($expectedRepoNames -join ',')
+    } else {
+        Add-InfoRow 'Repo names' $RepoNames
+    }
 } else {
-    Add-InfoRow 'Repo names' $RepoNames
+    Add-Check 'Repos' $RepoCt $ExpRepoCt
+    if ($ExpRepoNames) {
+        Add-Check 'Repo names' $RepoNames $ExpRepoNames
+    } else {
+        Add-InfoRow 'Repo names' $RepoNames
+    }
 }
 
 # ─────────────────────────── Print results table ───────────────────────────
