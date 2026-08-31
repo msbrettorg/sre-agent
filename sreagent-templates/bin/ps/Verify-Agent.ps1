@@ -209,8 +209,8 @@ $AllowAdditionalConnectors = Get-Exp '.allowAdditionalConnectors' 'false'
 Add-Check 'Connectors (healthy)' $ConnHealthy  $ConnCt
 if ($AllowAdditionalConnectors -eq 'true' -and $ExpectedConfig) {
     $connectorPayload = $Connectors | ConvertFrom-Json
-    $actualConnectorNames = @($connectorPayload.value.name | Sort-Object -Unique)
-    $expectedConnectorNames = @(($ExpectedConfig | ConvertFrom-Json).connectors.name | Sort-Object -Unique)
+    $actualConnectorNames = @(@($connectorPayload.value) | ForEach-Object { $_.name } | Sort-Object -Unique)
+    $expectedConnectorNames = @(@(($ExpectedConfig | ConvertFrom-Json).connectors) | ForEach-Object { $_.name } | Sort-Object -Unique)
     $requiredConnectorNames = @($expectedConnectorNames | Where-Object { $actualConnectorNames -contains $_ })
     Add-Check 'Required connectors' ([string]$requiredConnectorNames.Count) ([string]$expectedConnectorNames.Count)
     Add-Check 'Required connector names' ($requiredConnectorNames -join ',') ($expectedConnectorNames -join ',')
@@ -256,8 +256,8 @@ $AllowAdditionalSkills = Get-Exp '.allowAdditionalSkills' 'false'
 
 if ($AllowAdditionalSkills -eq 'true' -and $ExpectedConfig) {
     $skillPayload = $Skills | ConvertFrom-Json
-    $actualSkillItems = if ($skillPayload -is [array]) { @($skillPayload) } else { @($skillPayload.value) }
-    $actualSkillNames = @($actualSkillItems.name | Sort-Object -Unique)
+    $actualSkillItems = @(if ($skillPayload -is [array]) { $skillPayload } else { $skillPayload.value })
+    $actualSkillNames = @($actualSkillItems | ForEach-Object { $_.name } | Sort-Object -Unique)
     $expectedPayload = $ExpectedConfig | ConvertFrom-Json
     $expectedSkillNames = @(@($expectedPayload.skills) + @($expectedPayload.pluginSkills) | Sort-Object -Unique)
     $requiredSkillNames = @($expectedSkillNames | Where-Object { $actualSkillNames -contains $_ })
@@ -373,8 +373,8 @@ $AllowAdditionalRepos = Get-Exp '.allowAdditionalRepos' 'false'
 
 if ($AllowAdditionalRepos -eq 'true' -and $ExpectedConfig) {
     $repoPayload = $Repos | ConvertFrom-Json
-    $actualRepoItems = if ($repoPayload -is [array]) { @($repoPayload) } else { @($repoPayload.value) }
-    $actualRepoNames = @($actualRepoItems.name | Sort-Object -Unique)
+    $actualRepoItems = @(if ($repoPayload -is [array]) { $repoPayload } else { $repoPayload.value })
+    $actualRepoNames = @($actualRepoItems | ForEach-Object { $_.name } | Sort-Object -Unique)
     $expectedRepoNames = @(($ExpectedConfig | ConvertFrom-Json).repos | Sort-Object -Unique)
     $requiredRepoNames = @($expectedRepoNames | Where-Object { $actualRepoNames -contains $_ })
     Add-Check 'Required repos' ([string]$requiredRepoNames.Count) ([string]$expectedRepoNames.Count)
