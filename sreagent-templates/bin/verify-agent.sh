@@ -149,6 +149,19 @@ else
   [[ -n "$EXP_CONN_NAMES" ]] && check "Connector names" "$CONN_NAMES" "$EXP_CONN_NAMES" || RESULTS="${RESULTS}\n  Connector names|${CONN_NAMES}|—|"
 fi
 
+# ── Built-in tool enablement ──
+EXP_ENABLED_TOOL_CT=$(exp '.enabledTools | length' "0")
+EXP_ENABLED_TOOL_NAMES=$(exp_list '.enabledTools')
+if [[ "$EXP_ENABLED_TOOL_CT" -gt 0 ]]; then
+  BUILTIN_TOOLS=$(dp_get "/api/v2/agent/tools")
+  ACTUAL_ENABLED_TOOL_LIST=$(echo "$BUILTIN_TOOLS" | jq -r '(.data // .value // .)[]? | select(.enabled == true) | .name' 2>/dev/null | sort -u)
+  EXPECTED_ENABLED_TOOL_LIST=$(echo "$EXPECTED_CONFIG" | jq -r '.enabledTools[]?' 2>/dev/null | sort -u)
+  REQUIRED_ENABLED_TOOL_NAMES=$(comm -12 <(printf '%s\n' "$EXPECTED_ENABLED_TOOL_LIST") <(printf '%s\n' "$ACTUAL_ENABLED_TOOL_LIST") | paste -sd, -)
+  REQUIRED_ENABLED_TOOL_CT=$(comm -12 <(printf '%s\n' "$EXPECTED_ENABLED_TOOL_LIST") <(printf '%s\n' "$ACTUAL_ENABLED_TOOL_LIST") | grep -c . || true)
+  check "Required enabled tools" "$REQUIRED_ENABLED_TOOL_CT" "$EXP_ENABLED_TOOL_CT"
+  check "Required enabled tool names" "$REQUIRED_ENABLED_TOOL_NAMES" "$EXP_ENABLED_TOOL_NAMES"
+fi
+
 # ── Skills ──
 SKILLS=$(dp_get "/api/v1/extendedAgent/skills")
 SKILL_CT=$(echo "$SKILLS" | jq 'if type == "array" then length elif .value then (.value | length) else 0 end' 2>/dev/null || echo 0)

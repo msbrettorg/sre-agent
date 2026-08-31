@@ -2,6 +2,7 @@ name: finops-toolkit-microsoft-finops-toolkit
 operation: install-direct
 spec:
   sourceUrl: microsoft/finops-toolkit
+  sourceRef: dev
   pathInRepo: src/templates/agent-plugin
   pluginName: microsoft-finops-toolkit
   expectedSkills:

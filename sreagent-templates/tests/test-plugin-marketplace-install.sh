@@ -35,6 +35,7 @@ cat > "$TMP/extras.json" <<'JSON'
         "operation": "install-direct",
         "spec": {
           "sourceUrl": "example/direct-skills",
+          "sourceRef": "dev",
           "pathInRepo": "plugins/test-plugin",
           "pluginName": "test-direct-plugin",
           "expectedSkills": ["test-direct-skill"],
@@ -90,6 +91,21 @@ fi
 SH
 chmod +x "$TMP/bin/az"
 
+cat > "$TMP/bin/git" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" != "ls-remote" ]]; then
+  printf 'unexpected git invocation: %s\n' "$*" >&2
+  exit 1
+fi
+default_ref=dev
+[[ "${STUB_WRONG_DEFAULT:-0}" == "1" ]] && default_ref=main
+printf 'ref: refs/heads/%s\tHEAD\n' "$default_ref"
+printf 'fedcba9876543210fedcba9876543210fedcba98\tHEAD\n'
+printf 'fedcba9876543210fedcba9876543210fedcba98\trefs/heads/dev\n'
+SH
+chmod +x "$TMP/bin/git"
+
 cat > "$TMP/bin/curl" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -144,7 +160,9 @@ case "$method $url" in
       separator=,
     fi
     if [[ -f "$STUB_STATE/direct-installed" ]]; then
-      response+="${separator}"'{"metadata":{"name":"direct-installed"},"spec":{"marketplaceName":null,"pluginName":"test-direct-plugin","source":{"repo":"example/direct-skills"},"importedSkills":[{"skillName":"test-direct-skill","sourceSkillName":"test-direct-skill"}],"sourceCommit":"fedcba9876543210","autoUpdate":false}}'
+      direct_commit=fedcba9876543210fedcba9876543210fedcba98
+      [[ -f "$STUB_STATE/direct-stale" ]] && direct_commit=0123456789abcdef0123456789abcdef01234567
+      response+="${separator}{\"metadata\":{\"name\":\"direct-installed\"},\"spec\":{\"marketplaceName\":null,\"pluginName\":\"test-direct-plugin\",\"source\":{\"repo\":\"example/direct-skills\"},\"importedSkills\":[{\"skillName\":\"test-direct-skill\",\"sourceSkillName\":\"test-direct-skill\"}],\"sourceCommit\":\"${direct_commit}\",\"autoUpdate\":false}}"
     fi
     response+=']}'
     ;;
@@ -158,6 +176,10 @@ case "$method $url" in
   "POST https://mock.agent/api/v2/plugins/install-direct")
     touch "$STUB_STATE/direct-installed"
     response='{"success":true,"skillCount":1}'
+    ;;
+  "DELETE https://mock.agent/api/v2/plugins/installations/direct-installed")
+    rm -f "$STUB_STATE/direct-installed" "$STUB_STATE/direct-stale"
+    response='{}'
     ;;
   "GET https://mock.agent/api/v1/extendedAgent/skills")
     if [[ "${STUB_MISSING_SKILL:-0}" == "1" ]]; then
@@ -187,7 +209,13 @@ SH
 chmod +x "$TMP/bin/curl"
 
 run_apply() {
-  rm -f "$TMP/state/marketplace" "$TMP/state/installed" "$TMP/state/direct-installed"
+  rm -f "$TMP/state/marketplace" "$TMP/state/installed" "$TMP/state/direct-installed" "$TMP/state/direct-stale"
+  if [[ "${STUB_PREINSTALL_DIRECT:-0}" == "1" ]]; then
+    touch "$TMP/state/direct-installed"
+  fi
+  if [[ "${STUB_STALE_DIRECT:-0}" == "1" ]]; then
+    touch "$TMP/state/direct-stale"
+  fi
   : > "$TMP/curl.log"
   PATH="$TMP/bin:$PATH" \
     STUB_LOG="$TMP/curl.log" \
@@ -200,13 +228,17 @@ run_apply() {
     bash bicep/apply-extras.sh sub rg agent "$TMP/extras.json"
 }
 
-run_apply > "$TMP/success.log" 2>&1
+if ! run_apply > "$TMP/success.log" 2>&1; then
+  cat "$TMP/success.log" >&2
+  exit 1
+fi
 grep -q $'POST\thttps://mock.agent/api/v2/plugins/marketplaces\t' "$TMP/curl.log"
 grep -q $'GET\thttps://mock.agent/api/v2/plugins/marketplaces/test-marketplace/resolve\t' "$TMP/curl.log"
 grep -q $'GET\thttps://mock.agent/api/v2/plugins/marketplaces/test-marketplace/plugins/test-plugin/skills\t' "$TMP/curl.log"
 grep -q $'POST\thttps://mock.agent/api/v2/plugins/marketplaces/test-marketplace/plugins/test-plugin/install\t{"autoUpdate":false}' "$TMP/curl.log"
 grep -q $'POST\thttps://mock.agent/api/v2/plugins/install-direct\t{"sourceUrl":"example/direct-skills","pathInRepo":"plugins/test-plugin"}' "$TMP/curl.log"
 ! grep -q $'POST\thttps://mock.agent/api/v2/plugins/installations\t' "$TMP/curl.log"
+! grep -q $'DELETE\thttps://mock.agent/api/v2/plugins/installations/direct-installed\t' "$TMP/curl.log"
 
 resolve_line=$(grep -n '/resolve' "$TMP/curl.log" | head -1 | cut -d: -f1)
 install_line=$(grep -n '/install' "$TMP/curl.log" | tail -1 | cut -d: -f1)
@@ -230,13 +262,27 @@ if STUB_RESOLVE_FAIL=1 run_apply > "$TMP/resolve-fail.log" 2>&1; then
 fi
 grep -q 'clone failed' "$TMP/resolve-fail.log"
 
+STUB_PREINSTALL_DIRECT=1 STUB_STALE_DIRECT=1 run_apply > "$TMP/direct-update.log" 2>&1
+grep -q $'DELETE\thttps://mock.agent/api/v2/plugins/installations/direct-installed\t' "$TMP/curl.log"
+grep -q $'POST\thttps://mock.agent/api/v2/plugins/install-direct\t{"sourceUrl":"example/direct-skills","pathInRepo":"plugins/test-plugin"}' "$TMP/curl.log"
+grep -q 'updating to dev (fedcba987654)' "$TMP/direct-update.log"
+
+if STUB_WRONG_DEFAULT=1 run_apply > "$TMP/wrong-default.log" 2>&1; then
+  echo "direct install with the wrong default branch should fail" >&2
+  exit 1
+fi
+grep -q 'must use dev as its default branch' "$TMP/wrong-default.log"
+
 grep -q 'install-from-marketplace' bicep/Apply-Extras.ps1
 grep -q 'install-direct' bicep/Apply-Extras.ps1
+grep -q 'sourceRef' bicep/Apply-Extras.ps1
+grep -q 'git ls-remote --symref' bicep/Apply-Extras.ps1
+grep -q 'Invoke-DataPlaneJson -Method DELETE' bicep/Apply-Extras.ps1
 grep -q 'plugins/marketplaces/$encodedMarketplace/plugins/$encodedPlugin' bicep/Apply-Extras.ps1
 grep -q 'POST -Url "$pluginUrl/install"' bicep/Apply-Extras.ps1
 grep -q 'api/v2/plugins/install-direct' bicep/Apply-Extras.ps1
 grep -q 'Set-GitHubPat' bicep/Apply-Extras.ps1
-grep -q "ValidateSet('GET', 'POST', 'PUT')" bicep/Apply-Extras.ps1
+grep -q "ValidateSet('GET', 'POST', 'PUT', 'DELETE')" bicep/Apply-Extras.ps1
 grep -q 'Invoke-RestMethod .* -Method \$Method ' bicep/Apply-Extras.ps1
 
 PATH="$TMP/bin:$PATH" \

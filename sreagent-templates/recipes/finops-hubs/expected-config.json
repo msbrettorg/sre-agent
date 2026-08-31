@@ -15,6 +15,10 @@
     {
       "name": "azure-resource-manager-mcp",
       "type": "Mcp"
+    },
+    {
+      "name": "azure-mcp-server",
+      "type": "Mcp"
     }
   ],
   "allowAdditionalConnectors": true,
@@ -36,6 +40,18 @@
     "aks-upgrade-capacity-planning"
   ],
   "tools": 51,
+  "enabledTools": [
+    "KustoClient",
+    "PlotAreaChartWithCorrelation",
+    "PlotBarChart",
+    "PlotHeatmap",
+    "PlotPieChart",
+    "PlotScatter",
+    "QueryAppInsightsByAppId",
+    "QueryAppInsightsByResourceId",
+    "QueryLogAnalyticsByResourceId",
+    "QueryLogAnalyticsByWorkspaceId"
+  ],
   "skills": [
     "azure-cost-management"
   ],

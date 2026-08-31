@@ -267,6 +267,13 @@ if [[ -f "${DIR}/tool-permissions.json" ]]; then
   _log "tool-permissions: loaded"
 fi
 
+# Built-in tool enablement is independent from Allow/Ask/Deny approval policy.
+TOOL_OVERRIDES='[]'
+if [[ -f "${DIR}/tool-overrides.json" ]]; then
+  TOOL_OVERRIDES=$(jq -c '.overrides' "${DIR}/tool-overrides.json")
+  _log "tool-overrides: $(echo "$TOOL_OVERRIDES" | jq 'length')"
+fi
+
 # GitHub domains (BYO App / PAT auth) — config/github-domains/*.yaml
 GITHUB_DOMAINS=$(resolve_env_vars "$(collect_config "github-domains")")
 _log "github-domains: $(echo "$GITHUB_DOMAINS" | jq 'length')"
@@ -427,6 +434,7 @@ jq -n \
   --argjson tools "$TOOLS" \
   --argjson pluginConfigs "$PLUGIN_CONFIGS" \
   --argjson toolPermissions "$TOOL_PERMISSIONS" \
+  --argjson toolOverrides "$TOOL_OVERRIDES" \
   --argjson githubDomains "$GITHUB_DOMAINS" \
   --argjson connectorV2 "$CONNECTORV2" \
   '{
@@ -452,6 +460,7 @@ jq -n \
     "tools": $tools,
     "pluginConfigs": [($pluginConfigs // [])[] | {name: (.metadata.name // .name), type: (.type // "Plugin"), tags: (.tags // []), properties: (.spec // .properties // {})}],
     "toolPermissions": $toolPermissions,
+    "toolOverrides": $toolOverrides,
     "githubDomains": $githubDomains,
     "connectorV2": $connectorV2
   }' > "$EXTRAS_FILE"

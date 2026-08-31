@@ -222,7 +222,7 @@ dataplane_request_json() {
 
   local curl_args=(-sS -w $'\n%{http_code}' -X "$method" "$url"
     -H "Authorization: Bearer ${token}" -H "Content-Type: application/json")
-  [[ "$method" != "GET" ]] && curl_args+=(--data "$body_json")
+  [[ -n "$body_json" ]] && curl_args+=(--data "$body_json")
   result=$(curl "${curl_args[@]}") || {
     echo "    FAILED - ${method} ${url}" >&2
     return 1
@@ -256,8 +256,9 @@ plugin_installation_matches() {
 }
 
 direct_plugin_installation_matches() {
-  local installations="$1" source_url="$2" plugin="$3" expected_skills="$4"
-  jq -e --arg source_url "$source_url" --arg plugin "$plugin" --argjson expected "$expected_skills" '
+  local installations="$1" source_url="$2" plugin="$3" expected_skills="$4" expected_commit="${5:-}"
+  jq -e --arg source_url "$source_url" --arg plugin "$plugin" \
+    --argjson expected "$expected_skills" --arg expected_commit "$expected_commit" '
     (if type == "array" then . else (.value // []) end
       | map(select(
           (.spec.marketplaceName // null) == null and
@@ -270,7 +271,42 @@ direct_plugin_installation_matches() {
         | sort) == ($expected | sort))
       and ($matches[0].spec.autoUpdate == false)
       and (($matches[0].spec.sourceCommit // "") | length > 0)
+      and ($expected_commit == "" or $matches[0].spec.sourceCommit == $expected_commit)
   ' >/dev/null <<<"$installations"
+}
+
+resolve_github_ref_commit() {
+  local source_url="$1" source_ref="$2"
+  local repo remote_url refs default_ref commit
+  case "$source_url" in
+    https://github.com/*)
+      repo="${source_url#https://github.com/}"
+      repo="${repo%.git}"
+      ;;
+    */*)
+      repo="$source_url"
+      ;;
+    *)
+      echo "    FAILED - sourceRef requires a github.com owner/repo sourceUrl: ${source_url}" >&2
+      return 1
+      ;;
+  esac
+  remote_url="https://github.com/${repo}.git"
+  if ! refs=$(git ls-remote --symref "$remote_url" HEAD "refs/heads/${source_ref}" 2>&1); then
+    echo "    FAILED - could not resolve ${source_url} ref ${source_ref}: ${refs}" >&2
+    return 1
+  fi
+  default_ref=$(awk '$1 == "ref:" && $3 == "HEAD" {sub(/^refs\/heads\//, "", $2); print $2; exit}' <<<"$refs")
+  commit=$(awk -v target="refs/heads/${source_ref}" '$1 ~ /^[0-9a-fA-F]+$/ && $2 == target {print $1; exit}' <<<"$refs")
+  if [[ -z "$default_ref" || "$default_ref" != "$source_ref" ]]; then
+    echo "    FAILED - ${source_url} must use ${source_ref} as its default branch because install-direct can't send a branch ref (actual: ${default_ref:-unknown})" >&2
+    return 1
+  fi
+  if [[ ${#commit} -ne 40 || "$commit" =~ [^0-9a-fA-F] ]]; then
+    echo "    FAILED - ${source_url} ref ${source_ref} didn't resolve to a commit" >&2
+    return 1
+  fi
+  printf '%s\n' "$commit"
 }
 
 # Reusable: get a data-plane bearer (defined here so multipart helper can use it)
@@ -807,6 +843,7 @@ if [[ "$count" -gt 0 ]]; then
       if [[ "$operation" == "install-direct" ]]; then
         source_url=$(jq -r --argjson i "$i" '.plugins.installations[$i].spec.sourceUrl' "$FILE")
         path_in_repo=$(jq -r --argjson i "$i" '.plugins.installations[$i].spec.pathInRepo // ""' "$FILE")
+        source_ref=$(jq -r --argjson i "$i" '.plugins.installations[$i].spec.sourceRef // empty' "$FILE")
         plugin=$(jq -r --argjson i "$i" '.plugins.installations[$i].spec.pluginName' "$FILE")
         expected_skills=$(jq -c --argjson i "$i" '.plugins.installations[$i].spec.expectedSkills // [] | sort' "$FILE")
         if [[ -z "$source_url" || "$source_url" == "null" ||
@@ -814,6 +851,10 @@ if [[ "$count" -gt 0 ]]; then
               "$(jq 'length' <<<"$expected_skills")" -eq 0 ]]; then
           echo "    FAILED - installation/${name} is missing sourceUrl, pluginName, or expectedSkills" >&2
           exit 1
+        fi
+        expected_commit=""
+        if [[ -n "$source_ref" ]]; then
+          expected_commit=$(resolve_github_ref_commit "$source_url" "$source_ref") || exit 1
         fi
 
         installations=$(dataplane_request_json GET "$url")
@@ -827,12 +868,28 @@ if [[ "$count" -gt 0 ]]; then
           | length
         ' <<<"$installations")
         if [[ "$match_count" -gt 0 ]]; then
-          if direct_plugin_installation_matches "$installations" "$source_url" "$plugin" "$expected_skills"; then
+          if direct_plugin_installation_matches "$installations" "$source_url" "$plugin" "$expected_skills" "$expected_commit"; then
             echo "  installation/${name}: already installed"
             continue
           fi
-          echo "    FAILED - installation/${name} exists but doesn't match the required skills or commit pin" >&2
-          exit 1
+          if [[ -n "$expected_commit" ]] &&
+             direct_plugin_installation_matches "$installations" "$source_url" "$plugin" "$expected_skills"; then
+            existing_name=$(jq -r --arg source_url "$source_url" --arg plugin "$plugin" '
+              (if type == "array" then . else (.value // []) end)
+              | map(select(
+                  (.spec.marketplaceName // null) == null and
+                  .spec.pluginName == $plugin and
+                  .spec.source.repo == $source_url
+                ))
+              | .[0].metadata.name
+            ' <<<"$installations")
+            encoded_existing_name=$(printf %s "$existing_name" | jq -sRr @uri)
+            echo "  installation/${name}: updating to ${source_ref} (${expected_commit:0:12})"
+            dataplane_request_json DELETE "${url}/${encoded_existing_name}" >/dev/null
+          else
+            echo "    FAILED - installation/${name} exists but doesn't match the required skills or commit pin" >&2
+            exit 1
+          fi
         fi
 
         echo "  installation/${name}: installing from URL"
@@ -845,7 +902,7 @@ if [[ "$count" -gt 0 ]]; then
         delay="${SRE_PLUGIN_INSTALL_DELAY_SECONDS:-5}"
         for attempt in $(seq 1 "$attempts"); do
           installations=$(dataplane_request_json GET "$url")
-          if direct_plugin_installation_matches "$installations" "$source_url" "$plugin" "$expected_skills"; then
+          if direct_plugin_installation_matches "$installations" "$source_url" "$plugin" "$expected_skills" "$expected_commit"; then
             installed=true
             break
           fi
@@ -1007,7 +1064,28 @@ if [[ "$tp_has" == "true" ]]; then
   fi
 fi
 
-# 4f-3. githubDomains — data-plane PUT /api/v2/github/domains/{domain}
+# 4f-3. toolOverrides — built-in tool On/Off state
+# Body: { overrides: [{ name: "...", enabled: true }] }
+count=$(jq '(.toolOverrides // []) | length' "$FILE")
+if [[ "$count" -gt 0 ]]; then
+  if [[ "$DP_TOKEN_AVAILABLE" == "true" ]]; then
+    echo "toolOverrides: configuring ${count} built-in tool(s)"
+    tool_overrides_body=$(jq -c '{overrides: (.toolOverrides // [])}' "$FILE")
+    if dataplane_request_json POST \
+      "${AGENT_ENDPOINT}/api/v2/agent/tools/configure" \
+      "$tool_overrides_body" >/dev/null; then
+      echo "  ok toolOverrides"
+    else
+      echo "  FAILED - POST agent/tools/configure" >&2
+      exit 1
+    fi
+  else
+    echo "toolOverrides: ${count} - skipped (no data-plane token)"
+    DP_SKIPPED_ITEMS+=("toolOverrides (${count} items)")
+  fi
+fi
+
+# 4f-4. githubDomains — data-plane PUT /api/v2/github/domains/{domain}
 # Supports authType: Pat (github.com only) and GitHubApp (BYO App for GHE)
 # Each entry: { metadata: { name: "github.com" }, spec: { authType, pat?, clientId?, privateKeySecretUri?, keyVaultManagedIdentityId? } }
 count=$(jq '.githubDomains // [] | length' "$FILE")

@@ -1,8 +1,15 @@
 {
   "allow": [
-    "PlotBarChart",
-    "PlotPieChart",
+    "KustoClient",
     "PlotAreaChartWithCorrelation",
+    "PlotBarChart",
+    "PlotHeatmap",
+    "PlotPieChart",
+    "PlotScatter",
+    "QueryAppInsightsByAppId",
+    "QueryAppInsightsByResourceId",
+    "QueryLogAnalyticsByResourceId",
+    "QueryLogAnalyticsByWorkspaceId",
     "PostMessageToConversation",
     "PostCardToConversation",
     "ReplyWithMessageToConversation",

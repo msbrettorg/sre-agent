@@ -321,6 +321,22 @@ if (Test-Path $connFile -PathType Leaf) {
 $totalConn = $connectors | jq 'length'
 Write-Log "Total: $totalConn connector(s)"
 
+# Built-in tool enablement and approval policy are independent data-plane settings.
+$toolPermissions = [pscustomobject]@{}
+$toolPermissionsFile = Join-Path $ConfigDir 'tool-permissions.json'
+if (Test-Path $toolPermissionsFile) {
+    $toolPermissions = Get-Content $toolPermissionsFile -Raw | ConvertFrom-Json
+    Write-Log 'tool-permissions: loaded'
+}
+
+$toolOverrides = @()
+$toolOverridesFile = Join-Path $ConfigDir 'tool-overrides.json'
+if (Test-Path $toolOverridesFile) {
+    $toolOverrideDocument = Get-Content $toolOverridesFile -Raw | ConvertFrom-Json
+    $toolOverrides = @($toolOverrideDocument.overrides)
+    Write-Log "tool-overrides: $($toolOverrides.Count)"
+}
+
 # ═══════ Read config/ ═══════
 
 Write-Info 'Assembling config/'
@@ -598,6 +614,8 @@ $extrasObj = [ordered]@{
     subagents              = $subagentsArr
     tools                  = $toolsArr
     pluginConfigs          = $pluginConfigsArr
+    toolPermissions        = $toolPermissions
+    toolOverrides          = $toolOverrides
     httpTriggers           = $httpTriggersArr
     knowledge              = $knowledgeArr
     knowledgeItems         = $knowledgeItemsArr

@@ -50,8 +50,9 @@ collect, store, or automate user credentials.
 
 Grant the agent's system-assigned managed identity access to the required Cost
 Management and billing scopes. The **azure-resource-manager-mcp** connector uses
-`AzureARM` authentication and does not require interactive user authentication
-or stored credentials.
+the ARM MCP endpoint as its data source and requests an `AzureARM` token for
+`https://mcp.management.azure.com/.default`. It does not require interactive user
+authentication or stored credentials.
 
 ### Set up the FinOps Hub Live Report
 
@@ -76,18 +77,28 @@ upload, and local live-data preview instructions.
 | Category | Items |
 |---|---|
 | **Agent** | Review-mode FinOps Hubs SRE Agent |
-| **Connectors** | FinOps Hub Kusto, Microsoft Teams, and Azure Resource Manager HTTP MCP connectors; Teams requires interactive authorization and ARM MCP uses the agent system-assigned managed identity |
-| **Tools** | 51 FinOps Kusto and Python tools, including read-only cross-subscription zone mapping, plus 14 explicitly selected Cost Management and Pricing MCP tools |
+| **Connectors** | FinOps Hub Kusto, Microsoft Teams, Azure Resource Manager HTTP MCP, and the FinOps Toolkit read-only Kusto stdio MCP server; Teams requires interactive authorization and both Azure MCP connectors use the agent system-assigned managed identity |
+| **Tools** | 51 FinOps Kusto and Python tools, including read-only cross-subscription zone mapping, plus 14 explicitly selected Cost Management and Pricing MCP tools; all five built-in Visualization tools and all five built-in Log Query tools are enabled and globally allowed |
 | **Skills** | Azure capacity management from its public marketplace, FinOps Toolkit from its official plugin URL, plus the official standalone Azure Cost Management skill |
 | **Subagents** | FinOps, finance, capacity, database, and hub specialists |
 | **Automations** | Scheduled FinOps and capacity operations |
 | **Knowledge** | Eight FinOps Hubs guides plus seven public Azure capacity, quota, reservation, zone-mapping, AKS upgrade, and resilience references |
 
 The Azure Resource Manager MCP connector is generated from the recipe with the
-`CostManagement,Pricing` toolset header, `AzureARM` authentication, and the
-agent's system-assigned managed identity. `create_budget` remains governed by
-the agent's **Review** action mode and is not included in the global auto-allow
-policy.
+`x-mcp-toolset: CostManagement` custom header, `AzureARM` authentication, the
+`https://mcp.management.azure.com/.default` token scope, and the agent's
+system-assigned managed identity. `create_budget` remains governed by the
+agent's **Review** action mode and is not included in the global auto-allow policy.
+The recipe separately enables and globally allows every built-in Visualization tool
+(`PlotAreaChartWithCorrelation`, `PlotBarChart`, `PlotHeatmap`, `PlotPieChart`,
+and `PlotScatter`) and Log Query tool (`KustoClient`,
+`QueryAppInsightsByAppId`, `QueryAppInsightsByResourceId`,
+`QueryLogAnalyticsByResourceId`, and `QueryLogAnalyticsByWorkspaceId`).
+`tool-overrides.json` controls the portal's On/Off state; `tool-permissions.json`
+controls the separate Allow/Ask/Deny approval policy.
+The `azure-mcp-server` stdio connector matches the FinOps Toolkit plugin's
+declared `@azure/mcp` Kusto read-only server requirement; it does not use
+ConnectorV2.
 
 ## Plugin skills
 
@@ -97,9 +108,13 @@ The recipe registers the public
 marketplaces. It installs `azure-capacity-management` from its marketplace and
 installs `finops-toolkit` directly from `src/templates/agent-plugin` because the
 SRE Agent marketplace resolver doesn't discover skills through that repository's
-plugin symlink. Both installations are commit-pinned with automatic updates
-disabled. Public repositories use the agent host's GitHub identity and don't
-store a PAT in the recipe.
+plugin symlink. The direct installation declares `sourceRef: dev`; because the
+documented install API doesn't accept a branch field, deployment fails closed
+unless `dev` is the repository's default branch and verifies the installed commit
+against `dev` HEAD. A stale installation is replaced only during an explicit
+canonical deployment. Both installations are commit-pinned with automatic
+updates disabled. Public repositories use the agent host's GitHub identity and
+don't store a PAT in the recipe.
 
 The current FinOps Toolkit marketplace plugin ships `finops-toolkit` but no
 longer ships `azure-cost-management`. The recipe pins that skill from the

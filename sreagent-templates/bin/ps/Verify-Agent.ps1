@@ -225,6 +225,27 @@ if ($AllowAdditionalConnectors -eq 'true' -and $ExpectedConfig) {
     }
 }
 
+# ─────────────────────────── Built-in tool enablement ───────────────────────────
+
+$ExpEnabledToolCt = Get-Exp '.enabledTools | length' '0'
+$ExpEnabledToolNames = Get-ExpList '.enabledTools'
+if ([int]$ExpEnabledToolCt -gt 0) {
+    $builtinToolsPayload = Invoke-Dp '/api/v2/agent/tools' | ConvertFrom-Json
+    $builtinTools = if ($builtinToolsPayload.PSObject.Properties['data']) {
+        @($builtinToolsPayload.data)
+    } elseif ($builtinToolsPayload.PSObject.Properties['value']) {
+        @($builtinToolsPayload.value)
+    } else {
+        @($builtinToolsPayload)
+    }
+    $actualEnabledToolNames = @($builtinTools | Where-Object { $_.enabled -eq $true } | ForEach-Object { $_.name } | Sort-Object -Unique)
+    $expectedPayload = $ExpectedConfig | ConvertFrom-Json
+    $expectedEnabledToolNames = @($expectedPayload.enabledTools | Sort-Object -Unique)
+    $requiredEnabledToolNames = @($expectedEnabledToolNames | Where-Object { $actualEnabledToolNames -contains $_ })
+    Add-Check 'Required enabled tools' ([string]$requiredEnabledToolNames.Count) ([string]$expectedEnabledToolNames.Count)
+    Add-Check 'Required enabled tool names' ($requiredEnabledToolNames -join ',') ($expectedEnabledToolNames -join ',')
+}
+
 # ─────────────────────────── Skills ───────────────────────────
 
 $Skills   = Invoke-Dp '/api/v1/extendedAgent/skills'

@@ -23,6 +23,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   plugin sources resolve during unattended deployments.
 
 ### Fixed
+- Enabled every built-in Visualization and Log Query tool in the `finops-hubs`
+  portal catalog through a separate built-in override payload, and corrected
+  the global access policy to current runtime names including `KustoClient`.
+- Required the FinOps Toolkit direct plugin installation to resolve and track
+  the repository's `dev` branch instead of relying on an implicit default ref.
+- Corrected the `finops-hubs` Azure Resource Manager MCP payload to use the
+  endpoint-specific token scope and the platform's flattened
+  `x-mcp-toolset: CostManagement` header shape with the agent's system-assigned
+  managed identity.
+- Added the FinOps Toolkit plugin's declared read-only Kusto stdio MCP
+  connector so its connector requirement is provisioned with the recipe.
 - Preserved the requested HTTP method in PowerShell data-plane calls so GitHub
   PAT configuration uses `PUT` instead of falling through to `POST`.
 - Kept Azure CLI warnings separate from deployment JSON so successful ARM

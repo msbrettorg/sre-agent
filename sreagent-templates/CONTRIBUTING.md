@@ -166,6 +166,8 @@ recipes/my-recipe/
   agent.json              ← Agent identity, settings, prompts for new-agent.sh
   connectors.json         ← Connector toggles + MCP/custom connector entries
   connectors.secrets.env  ← Secret placeholders (gitignored)
+  tool-overrides.json     ← Optional built-in tool On/Off overrides
+  tool-permissions.json   ← Optional built-in tool Allow/Ask/Deny policy
   expected-config.json    ← Verification spec (what should be deployed)
   .gitignore              ← Ignores secrets + data/
   config/
@@ -187,6 +189,8 @@ recipes/my-recipe/
 | `agent.json` | ✅ | Agent identity, access level, prompts for `new-agent.sh` |
 | `connectors.json` | ✅ | Connector toggles + entries |
 | `connectors.secrets.env` | ✅ | Secret placeholders (gitignored) |
+| `tool-overrides.json` | Optional | Built-in tool On/Off overrides: `{ "overrides": [{ "name": "...", "enabled": true }] }` |
+| `tool-permissions.json` | Optional | Built-in tool approval policy with `allow`, `ask`, and `deny` arrays |
 | `expected-config.json` | ✅ | Verification spec — defines exactly what should be deployed |
 | `.gitignore` | ✅ | Must ignore `connectors.secrets.env` and `data/` |
 | At least 1 skill | ✅ | `.yaml` + `.md` file pair |
@@ -212,6 +216,7 @@ recipes/my-recipe/
     { "name": "app-insights", "type": "AppInsights" }
   ],
   "skills": ["my-skill-name"],
+  "enabledTools": ["PlotBarChart"],
   "subagents": ["my-subagent-name"],
   "hooks": ["deny-prod-deletes"],
   "commonPrompts": ["safety-rules"],

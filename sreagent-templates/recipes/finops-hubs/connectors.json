@@ -23,14 +23,13 @@
       "name": "azure-resource-manager-mcp",
       "properties": {
         "dataConnectorType": "Mcp",
-        "dataSource": "placeholder",
+        "dataSource": "https://mcp.management.azure.com",
         "extendedProperties": {
           "type": "http",
           "endpoint": "https://mcp.management.azure.com",
           "authType": "AzureARM",
-          "headers": {
-            "x-mcp-toolset": "CostManagement,Pricing"
-          },
+          "armScope": "https://mcp.management.azure.com/.default",
+          "x-mcp-toolset": "CostManagement",
           "toolsVisibleToMetaAgent": [
             "query_costs",
             "query_aks_costs",
@@ -62,6 +61,33 @@
             "get_retail_prices",
             "start_pricesheet_download",
             "get_pricesheet_status"
+          ]
+        },
+        "identity": "system"
+      }
+    },
+    {
+      "name": "azure-mcp-server",
+      "properties": {
+        "dataConnectorType": "Mcp",
+        "dataSource": "placeholder",
+        "extendedProperties": {
+          "type": "stdio",
+          "command": "npx",
+          "args": [
+            "-y",
+            "@azure/mcp@latest",
+            "server",
+            "start",
+            "--namespace",
+            "kusto",
+            "--read-only"
+          ],
+          "toolsVisibleToMetaAgent": [
+            "*"
+          ],
+          "selectedTools": [
+            "*"
           ]
         },
         "identity": "system"

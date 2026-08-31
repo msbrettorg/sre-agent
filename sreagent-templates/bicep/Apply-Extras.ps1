@@ -311,7 +311,7 @@ function DataPlane-PostJson {
 
 function Invoke-DataPlaneJson {
     param(
-        [ValidateSet('GET', 'POST', 'PUT')][string]$Method,
+        [ValidateSet('GET', 'POST', 'PUT', 'DELETE')][string]$Method,
         [string]$Url,
         [object]$BodyObj
     )
@@ -321,8 +321,8 @@ function Invoke-DataPlaneJson {
         "Content-Type" = "application/json"
     }
     try {
-        if ($Method -eq 'GET') {
-            return Invoke-RestMethod -TimeoutSec 30 -Uri $Url -Method Get -Headers $headers
+        if ($Method -in @('GET', 'DELETE')) {
+            return Invoke-RestMethod -TimeoutSec 30 -Uri $Url -Method $Method -Headers $headers
         }
         $bodyJson = $BodyObj | ConvertTo-Json -Compress -Depth 20
         return Invoke-RestMethod -TimeoutSec 30 -Uri $Url -Method $Method -Headers $headers -Body $bodyJson -ContentType "application/json"
@@ -369,7 +369,8 @@ function Test-DirectPluginInstallation {
         [object]$Installations,
         [string]$SourceUrl,
         [string]$Plugin,
-        [string[]]$ExpectedSkills
+        [string[]]$ExpectedSkills,
+        [string]$ExpectedCommit = ''
     )
     $matches = @(Get-ResponseItems $Installations | Where-Object {
         $null -eq $_.spec.marketplaceName -and
@@ -387,9 +388,54 @@ function Test-DirectPluginInstallation {
     } | Sort-Object)
     $expected = @($ExpectedSkills | Sort-Object)
     $skillsMatch = -not (Compare-Object -ReferenceObject $expected -DifferenceObject $importedSkills)
+    $commitMatches = [string]::IsNullOrEmpty($ExpectedCommit) -or
+        $matches[0].spec.sourceCommit -eq $ExpectedCommit
     return $skillsMatch -and
         $matches[0].spec.autoUpdate -eq $false -and
-        -not [string]::IsNullOrEmpty($matches[0].spec.sourceCommit)
+        -not [string]::IsNullOrEmpty($matches[0].spec.sourceCommit) -and
+        $commitMatches
+}
+
+function Resolve-GitHubRefCommit {
+    param(
+        [string]$SourceUrl,
+        [string]$SourceRef
+    )
+    if ($SourceUrl -match '^https://github\.com/(.+?)(?:\.git)?$') {
+        $repo = $Matches[1]
+    } elseif ($SourceUrl -match '^[^/]+/[^/]+$') {
+        $repo = $SourceUrl
+    } else {
+        throw "sourceRef requires a github.com owner/repo sourceUrl: $SourceUrl"
+    }
+
+    $remoteUrl = "https://github.com/$repo.git"
+    $targetRef = "refs/heads/$SourceRef"
+    $refs = @(& git ls-remote --symref $remoteUrl HEAD $targetRef 2>&1)
+    if ($LASTEXITCODE -ne 0) {
+        throw "could not resolve $SourceUrl ref $SourceRef`: $($refs -join ' ')"
+    }
+
+    $defaultRef = ''
+    $commit = ''
+    foreach ($line in $refs) {
+        $text = [string]$line
+        if ($text -match '^ref:\s+refs/heads/(.+)\s+HEAD$') {
+            $defaultRef = $Matches[1]
+        }
+        $parts = @($text -split '\s+')
+        if ($parts.Count -ge 2 -and $parts[1] -eq $targetRef) {
+            $commit = $parts[0]
+        }
+    }
+    if ([string]::IsNullOrEmpty($defaultRef) -or $defaultRef -ne $SourceRef) {
+        $actual = if ($defaultRef) { $defaultRef } else { 'unknown' }
+        throw "$SourceUrl must use $SourceRef as its default branch because install-direct can't send a branch ref (actual: $actual)"
+    }
+    if ($commit -notmatch '^[0-9a-fA-F]{40}$') {
+        throw "$SourceUrl ref $SourceRef didn't resolve to a commit"
+    }
+    return $commit
 }
 
 # ── Helper: PUT to v2 extendedAgent data-plane (hooks/commonprompts/plugins) ─
@@ -1044,12 +1090,22 @@ if ($piCount -gt 0) {
                 } else {
                     ''
                 }
+                $sourceRef = if ($inst.spec.PSObject.Properties['sourceRef']) {
+                    $inst.spec.sourceRef
+                } else {
+                    ''
+                }
                 $plugin = $inst.spec.pluginName
                 $expectedSkills = @($inst.spec.expectedSkills | Sort-Object)
                 if ([string]::IsNullOrEmpty($sourceUrl) -or
                     [string]::IsNullOrEmpty($plugin) -or
                     $expectedSkills.Count -eq 0) {
                     throw "installation/$($inst.name) is missing sourceUrl, pluginName, or expectedSkills"
+                }
+                $expectedCommit = if ($sourceRef) {
+                    Resolve-GitHubRefCommit -SourceUrl $sourceUrl -SourceRef $sourceRef
+                } else {
+                    ''
                 }
 
                 $currentInstallations = Invoke-DataPlaneJson -Method GET -Url $url
@@ -1059,11 +1115,19 @@ if ($piCount -gt 0) {
                     $_.spec.source.repo -eq $sourceUrl
                 })
                 if ($matches.Count -gt 0) {
-                    if (Test-DirectPluginInstallation -Installations $currentInstallations -SourceUrl $sourceUrl -Plugin $plugin -ExpectedSkills $expectedSkills) {
+                    if (Test-DirectPluginInstallation -Installations $currentInstallations -SourceUrl $sourceUrl -Plugin $plugin -ExpectedSkills $expectedSkills -ExpectedCommit $expectedCommit) {
                         Write-Host "  installation/$($inst.name): already installed"
                         continue
                     }
-                    throw "installation/$($inst.name) exists but doesn't match the required skills or commit pin"
+                    if ($expectedCommit -and
+                        (Test-DirectPluginInstallation -Installations $currentInstallations -SourceUrl $sourceUrl -Plugin $plugin -ExpectedSkills $expectedSkills)) {
+                        $existingName = $matches[0].metadata.name
+                        $encodedExistingName = [uri]::EscapeDataString($existingName)
+                        Write-Host "  installation/$($inst.name): updating to $sourceRef ($($expectedCommit.Substring(0, 12)))"
+                        $null = Invoke-DataPlaneJson -Method DELETE -Url "$url/$encodedExistingName"
+                    } else {
+                        throw "installation/$($inst.name) exists but doesn't match the required skills or commit pin"
+                    }
                 }
 
                 Write-Host "  installation/$($inst.name): installing from URL"
@@ -1076,7 +1140,7 @@ if ($piCount -gt 0) {
                 $installed = $false
                 for ($attempt = 1; $attempt -le $installAttempts; $attempt++) {
                     $currentInstallations = Invoke-DataPlaneJson -Method GET -Url $url
-                    if (Test-DirectPluginInstallation -Installations $currentInstallations -SourceUrl $sourceUrl -Plugin $plugin -ExpectedSkills $expectedSkills) {
+                    if (Test-DirectPluginInstallation -Installations $currentInstallations -SourceUrl $sourceUrl -Plugin $plugin -ExpectedSkills $expectedSkills -ExpectedCommit $expectedCommit) {
                         $installed = $true
                         break
                     }
@@ -1204,6 +1268,74 @@ if ($pcCount -gt 0) {
     } else {
         Write-Host "pluginConfigs: $pcCount - WARNING skipped (no data-plane token)"
         $DpSkippedItems.Add("pluginConfigs ($pcCount items)")
+    }
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 4f-2. toolPermissions — built-in tool Allow/Ask/Deny approval policy
+# Route: PUT /api/v2/agent/settings/global
+# ═════════════════════════════════════════════════════════════════════════════
+$toolPermissions = if ($extras.PSObject.Properties['toolPermissions']) { $extras.toolPermissions } else { $null }
+$toolPermissionCount = if ($null -ne $toolPermissions) { @($toolPermissions.PSObject.Properties).Count } else { 0 }
+if ($toolPermissionCount -gt 0) {
+    if ($DpTokenAvailable) {
+        Write-Host 'toolPermissions: configuring'
+        $token = Get-DpToken
+        $url = "$AgentEndpoint/api/v2/agent/settings/global"
+        $headers = @{ Authorization = "******" }
+        $etag = '*'
+        try {
+            $current = Invoke-WebRequest -TimeoutSec 30 -Uri $url -Method Get -Headers $headers
+            if ($current.Headers.ETag) {
+                $etag = [string]$current.Headers.ETag
+            }
+        } catch {
+            $statusCode = $null
+            if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
+                $statusCode = [int]$_.Exception.Response.StatusCode
+            }
+            if ($statusCode -ne 404) {
+                throw "FAILED - GET $url`: $($_.Exception.Message)"
+            }
+        }
+        $headers['If-Match'] = $etag
+        $headers['Content-Type'] = 'application/json'
+        $bodyJson = @{ permissions = $toolPermissions } | ConvertTo-Json -Compress -Depth 20
+        try {
+            $null = Invoke-RestMethod `
+                -TimeoutSec 30 `
+                -Uri $url `
+                -Method Put `
+                -Headers $headers `
+                -Body $bodyJson `
+                -ContentType 'application/json'
+            Write-Host '  ok toolPermissions'
+        } catch {
+            throw "FAILED - PUT $url`: $($_.Exception.Message)"
+        }
+    } else {
+        Write-Host 'toolPermissions - WARNING skipped (no data-plane token)'
+        $DpSkippedItems.Add('toolPermissions')
+    }
+}
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 4f-3. toolOverrides — built-in tool On/Off state
+# Route: POST /api/v2/agent/tools/configure
+# ═════════════════════════════════════════════════════════════════════════════
+$toolOverrides = if ($extras.PSObject.Properties['toolOverrides']) { @($extras.toolOverrides) } else { @() }
+$toolOverrideCount = $toolOverrides.Count
+if ($toolOverrideCount -gt 0) {
+    if ($DpTokenAvailable) {
+        Write-Host "toolOverrides: configuring $toolOverrideCount built-in tool(s)"
+        $null = Invoke-DataPlaneJson `
+            -Method POST `
+            -Url "$AgentEndpoint/api/v2/agent/tools/configure" `
+            -BodyObj @{ overrides = $toolOverrides }
+        Write-Host '  ok toolOverrides'
+    } else {
+        Write-Host "toolOverrides: $toolOverrideCount - WARNING skipped (no data-plane token)"
+        $DpSkippedItems.Add("toolOverrides ($toolOverrideCount items)")
     }
 }
 
