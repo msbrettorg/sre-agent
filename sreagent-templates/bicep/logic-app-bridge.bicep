@@ -66,7 +66,7 @@ resource logicApp 'Microsoft.Logic/workflows@2019-05-01' = {
 // Role ID for "SRE Agent Administrator"
 var sreAgentAdminRoleId = 'e79298df-d852-4c6d-84f9-5d13249d1e55'
 
-resource agent 'Microsoft.App/agents@2025-05-01-preview' existing = {
+resource agent 'Microsoft.App/agents@2026-01-01' existing = {
   name: agentName
 }
 

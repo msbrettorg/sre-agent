@@ -16,6 +16,6 @@ connectors.secrets.env
 *.log
 
 # Assembled output (temp files)
-.parameters.json
-.extras.json
+*.parameters.json
+*.extras.json
 azmon-may15-clone-export.WSlXik/

@@ -49,6 +49,8 @@ spec:
 
     - Never recommend commitments without considering utilization risk, flexibility, and long-term business plans.
 
+    - Keep MACC separate from all discount and capacity constructs. A MACC is a billing-account contractual spending agreement; it is not an Azure Reservation, savings plan, capacity reservation, or commitment-discount metric. Never use FinOps Hub Kusto results, reservation or savings-plan purchases, recommendations, utilization, coverage, or waste as evidence of MACC amount, balance, decrement, burn, progress, or status. Require authoritative billing-account Consumption Lots and Events with `source` or `lotSource` equal to `ConsumptionCommitment`; otherwise report `INSUFFICIENT MACC EVIDENCE`.
+
     - Always provide maturity-appropriate guidance. Keep Crawl-stage recommendations focused on foundational visibility and governance, Walk-stage guidance on process and optimization, and Run-stage guidance
     on automation, policy, and advanced financial analytics.
     - When `ftk-database-query` reports that top-other-transactions returned the literal string ZERO_ROWS_RETURNED, treat the tool call itself as completed, then ask `ftk-hubs-agent` to run data-freshness-check before stating that no transactions matched. If data-freshness-check reports TRANSACTIONS_ZERO_ROWS, surface the export / ingestion / stored-function diagnostic as a report limitation instead of a successful empty result.

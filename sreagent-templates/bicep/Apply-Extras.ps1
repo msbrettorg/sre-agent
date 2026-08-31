@@ -10,12 +10,11 @@
          — requires token for audience https://azuresre.dev.
 
       2. ARM (agent resource itself, incident platform PATCH)
-         — uses `az rest` with management-plane token.
+         — uses Az PowerShell with the selected subscription context.
 
     Auth:
-      ARM calls         → `az login` (control-plane token, always available)
-      data-plane calls  → token with audience https://azuresre.dev
-                          (`az account get-access-token --resource ...`)
+      ARM calls         → Az PowerShell context for the requested subscription
+      data-plane calls  → Az PowerShell token with audience https://azuresre.dev
                           Optional — script continues if unavailable
 
     Repo auth (GitHub / ADO):
@@ -66,7 +65,7 @@ $ErrorActionPreference = 'Stop'
 $PrereqScript = Join-Path $PSScriptRoot 'Check-Prerequisites.ps1'
 if (Test-Path $PrereqScript) {
     . $PrereqScript
-    if (-not (Test-Prerequisites -IncludeCurl -IncludeTar)) { exit 1 }
+    if (-not (Test-Prerequisites -IncludeTar)) { exit 1 }
 } else {
     # Fallback: inline check
     foreach ($cmd in @('jq', 'tar')) {
@@ -97,13 +96,16 @@ if (-not (Test-Path $ExtrasFile)) {
 # many optional keys on $extras that may be absent for minimal recipes.
 Set-StrictMode -Off
 
-$ApiVersion = "2025-05-01-preview"
+$AgentApiVersion = "2026-01-01"
+$ChildApiVersion = "2025-05-01-preview"
 $ArmBase = "https://management.azure.com/subscriptions/$Subscription/resourceGroups/$ResourceGroup/providers/Microsoft.App/agents/$AgentName"
+$AzPowerShellPath = Join-Path (Split-Path $PSScriptRoot -Parent) 'bin/ps/Az-PowerShell.ps1'
+. $AzPowerShellPath
+$AzContext = Get-RequiredAzContext -SubscriptionId $Subscription
 
 # ── Resolve agent endpoint and UAMI ────────────────────────────────────────
 try {
-    $agentRaw = (az rest -m GET --url "$ArmBase`?api-version=$ApiVersion" -o json 2>$null) -join "`n"
-    $agentObj = $agentRaw | ConvertFrom-Json
+    $agentObj = Invoke-AzJsonRest -Method GET -Uri "$ArmBase`?api-version=$AgentApiVersion" -DefaultProfile $AzContext
 } catch {
     $agentObj = $null
 }
@@ -133,16 +135,12 @@ $DpSkippedItems = [System.Collections.Generic.List[string]]::new()
 $GitHubPatInstalled = $false
 
 try {
-    $null = az account get-access-token --resource https://azuresre.dev --query accessToken -o tsv 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        $DpTokenAvailable = $true
-        Write-Host "Data-plane:     token available"
-    } else {
-        throw "token unavailable"
-    }
+    $null = Get-AzBearerToken -ResourceUrl 'https://azuresre.dev' -DefaultProfile $AzContext
+    $DpTokenAvailable = $true
+    Write-Host "Data-plane:     token available"
 } catch {
     Write-Host "Data-plane:     token unavailable (hooks, repos, httpTriggers will be skipped)"
-    Write-Host "                To apply later: az login --scope `"https://azuresre.dev/.default`" && re-run"
+    Write-Host "                To apply later: Connect-AzAccount and re-run"
 }
 
 # ── Load extras JSON ────────────────────────────────────────────────────────
@@ -150,11 +148,7 @@ $extras = Get-Content -Raw $ExtrasFile | ConvertFrom-Json
 
 # ── Helper: get data-plane bearer token ─────────────────────────────────────
 function Get-DpToken {
-    $tok = az account get-access-token --resource https://azuresre.dev --query accessToken -o tsv 2>$null
-    if ($LASTEXITCODE -ne 0 -or -not $tok) {
-        throw "Could not get data-plane token (audience https://azuresre.dev)"
-    }
-    return $tok
+    return Get-AzBearerToken -ResourceUrl 'https://azuresre.dev' -DefaultProfile $AzContext
 }
 
 function Set-GitHubPat {
@@ -167,42 +161,28 @@ function Set-GitHubPat {
 # Used for incidentFilters, scheduledTasks, commonPrompts.
 function Arm-PutSubresource {
     param([string]$Type, [string]$Name, [string]$SpecJson)
-    $url = "$ArmBase/$Type/$Name`?api-version=$ApiVersion"
+    $url = "$ArmBase/$Type/$Name`?api-version=$ChildApiVersion"
     $encoded = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($SpecJson))
     $body = @{ properties = @{ value = $encoded } } | ConvertTo-Json -Compress -Depth 10
-    $tmp = [System.IO.Path]::GetTempFileName()
     try {
-        Set-Content -Path $tmp -Value $body -NoNewline
         Write-Host "  ARM PUT $Type/$Name"
-        $result = az rest -m PUT --url $url --body "@$tmp" --headers "Content-Type=application/json" -o json 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "    ok"
-        } else {
-            $msg = ($result | Out-String) -replace '(?s).*"message":"([^"]*)".*', '$1'
-            Write-Host "    FAILED - $msg"
-        }
-    } finally {
-        Remove-Item $tmp -ErrorAction SilentlyContinue
+        $null = Invoke-AzJsonRest -Method PUT -Uri $url -Payload $body -DefaultProfile $AzContext
+        Write-Host "    ok"
+    } catch {
+        Write-Host "    FAILED - $($_.Exception.Message)"
     }
 }
 
 # ── Helper: ARM PUT connector sub-resource (native properties, no base64) ──
 function Arm-PutConnector {
     param([string]$Name, [string]$BodyJson)
-    $url = "$ArmBase/connectors/$Name`?api-version=$ApiVersion"
-    $tmp = [System.IO.Path]::GetTempFileName()
+    $url = "$ArmBase/connectors/$Name`?api-version=$ChildApiVersion"
     try {
-        Set-Content -Path $tmp -Value $BodyJson -NoNewline
         Write-Host "  ARM PUT connectors/$Name"
-        $result = az rest -m PUT --url $url --body "@$tmp" --headers "Content-Type=application/json" -o json 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "    ok"
-        } else {
-            $msg = ($result | Out-String) -replace '(?s).*"message":"([^"]*)".*', '$1'
-            Write-Host "    FAILED - $msg"
-        }
-    } finally {
-        Remove-Item $tmp -ErrorAction SilentlyContinue
+        $null = Invoke-AzJsonRest -Method PUT -Uri $url -Payload $BodyJson -DefaultProfile $AzContext
+        Write-Host "    ok"
+    } catch {
+        Write-Host "    FAILED - $($_.Exception.Message)"
     }
 }
 
@@ -289,20 +269,10 @@ function DataPlane-UploadMultipart {
 # ── Helper: POST a plugin/installation JSON document (data-plane v2) ────────
 function DataPlane-PostJson {
     param([string]$Label, [string]$Url, [object]$BodyObj)
-    try {
-        $token = Get-DpToken
-    } catch {
-        Write-Host "    FAILED - could not get data-plane token"
-        return
-    }
     Write-Host "  data-plane POST $Label"
     try {
-        $headers = @{
-            Authorization  = "Bearer $token"
-            "Content-Type" = "application/json"
-        }
-        $bodyJson = $BodyObj | ConvertTo-Json -Compress -Depth 20
-        $null = Invoke-RestMethod -TimeoutSec 30 -Uri $Url -Method Post -Headers $headers -Body $bodyJson -ContentType "application/json"
+        $null = Invoke-AzJsonRest -Method POST -Uri $Url -Payload $BodyObj `
+            -ResourceId 'https://azuresre.dev' -DefaultProfile $AzContext
         Write-Host "    ok"
     } catch {
         Write-Host "    FAILED - POST $Url"
@@ -315,17 +285,13 @@ function Invoke-DataPlaneJson {
         [string]$Url,
         [object]$BodyObj
     )
-    $token = Get-DpToken
-    $headers = @{
-        Authorization  = "Bearer $token"
-        "Content-Type" = "application/json"
-    }
     try {
         if ($Method -in @('GET', 'DELETE')) {
-            return Invoke-RestMethod -TimeoutSec 30 -Uri $Url -Method $Method -Headers $headers
+            return Invoke-AzJsonRest -Method $Method -Uri $Url `
+                -ResourceId 'https://azuresre.dev' -DefaultProfile $AzContext
         }
-        $bodyJson = $BodyObj | ConvertTo-Json -Compress -Depth 20
-        return Invoke-RestMethod -TimeoutSec 30 -Uri $Url -Method $Method -Headers $headers -Body $bodyJson -ContentType "application/json"
+        return Invoke-AzJsonRest -Method $Method -Uri $Url -Payload $BodyObj `
+            -ResourceId 'https://azuresre.dev' -DefaultProfile $AzContext
     } catch {
         throw "FAILED - $Method $Url`: $($_.Exception.Message)"
     }
@@ -441,24 +407,20 @@ function Resolve-GitHubRefCommit {
 # ── Helper: PUT to v2 extendedAgent data-plane (hooks/commonprompts/plugins) ─
 function DataPlane-PutExtended {
     param([string]$Kind, [string]$Name, [string]$Type, [array]$Tags, [object]$Properties)
-    $token = Get-DpToken
     $body = @{
         name       = $Name
         type       = $Type
         tags       = @($Tags)
         properties = $Properties
-    } | ConvertTo-Json -Compress -Depth 20
+    }
     $encodedName = [uri]::EscapeDataString($Name)
     $url = "$AgentEndpoint/api/v2/extendedAgent/$Kind/$encodedName"
     try {
-        $headers = @{
-            Authorization  = "Bearer $token"
-            "Content-Type" = "application/json"
-        }
-        $null = Invoke-RestMethod -TimeoutSec 30 -Uri $url -Method Put -Headers $headers -Body $body -ContentType "application/json"
+        $null = Invoke-AzJsonRest -Method PUT -Uri $url -Payload $body `
+            -ResourceId 'https://azuresre.dev' -DefaultProfile $AzContext
         Write-Host "  ok $Kind/$Name"
     } catch {
-        Write-Host "  FAILED - PUT $Kind/$Name"
+        Write-Host "  FAILED - PUT $Kind/$Name`: $($_.Exception.Message)"
     }
 }
 
@@ -497,19 +459,13 @@ if ($ipCount -gt 0) {
         $patchProps = @{ type = $platformType; connectionName = $connName }
         if ($connKey) { $patchProps.connectionKey = $connKey }
         $patchBody = @{ properties = @{ incidentManagementConfiguration = $patchProps } } | ConvertTo-Json -Compress -Depth 10
-        $tmp = [System.IO.Path]::GetTempFileName()
         try {
-            Set-Content -Path $tmp -Value $patchBody -NoNewline
-            $patchOut = az rest --method PATCH --url "$ArmBase`?api-version=$ApiVersion" --body "@$tmp" --headers "Content-Type=application/json" -o json 2>&1
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "    ok"
-            } else {
-                Write-Host "    FAILED - could not set incident platform"
-                Write-Host "    Body sent: $patchBody"
-                Write-Host "    Response : $($patchOut | Out-String)"
-            }
-        } finally {
-            Remove-Item -Path $tmp -Force -ErrorAction SilentlyContinue
+            $null = Invoke-AzJsonRest -Method PATCH -Uri "$ArmBase`?api-version=$AgentApiVersion" `
+                -Payload $patchBody -DefaultProfile $AzContext
+            Write-Host "    ok"
+        } catch {
+            Write-Host "    FAILED - could not set incident platform"
+            Write-Host "    $($_.Exception.Message)"
         }
         Write-Host "  Waiting 30s for platform to initialize..."
         Start-Sleep -Seconds 30
@@ -638,16 +594,25 @@ $stCount = ($scheduledTasks | Measure-Object).Count
 if ($stCount -gt 0) {
     if ($DpTokenAvailable) {
         Write-Host "scheduledTasks: $stCount"
+        $deployedScheduledTasks = @(
+            Get-ResponseItems (
+                Invoke-DataPlaneJson -Method GET -Url "$AgentEndpoint/api/v1/scheduledtasks"
+            )
+        )
         foreach ($task in $scheduledTasks) {
             $name = $task.metadata.name
             $spec = $task.spec
+            $deployedTask = @(
+                $deployedScheduledTasks | Where-Object { $_.name -eq $name }
+            ) | Select-Object -First 1
+            $isEnabled = $deployedTask -and $deployedTask.status -eq 'Active'
             $props = @{
                 name           = if ($spec.name) { $spec.name } else { "" }
                 description    = if ($spec.description) { $spec.description } else { "" }
                 cronExpression = if ($spec.schedule) { $spec.schedule } elseif ($spec.cronExpression) { $spec.cronExpression } else { "" }
                 agentPrompt    = if ($spec.prompt) { $spec.prompt } elseif ($spec.agentPrompt) { $spec.agentPrompt } else { "" }
                 agentMode      = if ($spec.mode) { $spec.mode } elseif ($spec.agentMode) { $spec.agentMode } else { "Review" }
-                isEnabled      = if ($null -ne $spec.enabled) { $spec.enabled } else { $true }
+                isEnabled      = $isEnabled
             }
             DataPlane-PutExtended -Kind "scheduledtasks" -Name $name -Type "ScheduledTask" -Tags @() -Properties $props
         }
@@ -910,12 +875,11 @@ if ($kiCount -gt 0) {
             $token = Get-DpToken
             $url = "${AgentEndpoint}/api/v2/extendedAgent/connectors/$([Uri]::EscapeDataString($itemName))"
             try {
-                $result = curl -sS -w "`n%{http_code}" -X PUT $url `
-                    -H "Authorization: Bearer $token" `
-                    -H "Content-Type: application/json" `
-                    --data $body 2>$null
-                $lines = $result -split "`n"
-                $httpCode = $lines[-1]
+                $webResponse = Invoke-WebRequest -Uri $url -Method Put `
+                    -Headers @{ Authorization = "Bearer $token" } `
+                    -ContentType 'application/json' `
+                    -Body $body -SkipHttpErrorCheck -ErrorAction Stop
+                $httpCode = [string]$webResponse.StatusCode
                 if ($httpCode -match '^2') {
                     Write-Host "  ok knowledgeItems/$itemName ($itemType)"
                 } elseif ($itemType -eq "KnowledgeWebPage") {
@@ -1280,35 +1244,16 @@ $toolPermissionCount = if ($null -ne $toolPermissions) { @($toolPermissions.PSOb
 if ($toolPermissionCount -gt 0) {
     if ($DpTokenAvailable) {
         Write-Host 'toolPermissions: configuring'
-        $token = Get-DpToken
         $url = "$AgentEndpoint/api/v2/agent/settings/global"
-        $headers = @{ Authorization = "******" }
-        $etag = '*'
         try {
+            $token = Get-DpToken
+            $headers = @{ Authorization = "Bearer $token" }
             $current = Invoke-WebRequest -TimeoutSec 30 -Uri $url -Method Get -Headers $headers
-            if ($current.Headers.ETag) {
-                $etag = [string]$current.Headers.ETag
-            }
-        } catch {
-            $statusCode = $null
-            if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
-                $statusCode = [int]$_.Exception.Response.StatusCode
-            }
-            if ($statusCode -ne 404) {
-                throw "FAILED - GET $url`: $($_.Exception.Message)"
-            }
-        }
-        $headers['If-Match'] = $etag
-        $headers['Content-Type'] = 'application/json'
-        $bodyJson = @{ permissions = $toolPermissions } | ConvertTo-Json -Compress -Depth 20
-        try {
-            $null = Invoke-RestMethod `
-                -TimeoutSec 30 `
-                -Uri $url `
-                -Method Put `
-                -Headers $headers `
-                -Body $bodyJson `
-                -ContentType 'application/json'
+            $etag = if ($current.Headers.ETag) { [string]$current.Headers.ETag } else { '*' }
+            $headers['If-Match'] = $etag
+            $body = @{ permissions = $toolPermissions } | ConvertTo-Json -Compress -Depth 20
+            $null = Invoke-RestMethod -TimeoutSec 30 -Uri $url -Method Put `
+                -Headers $headers -Body $body -ContentType 'application/json'
             Write-Host '  ok toolPermissions'
         } catch {
             throw "FAILED - PUT $url`: $($_.Exception.Message)"
@@ -1404,7 +1349,8 @@ if ($tlCount -gt 0) {
         foreach ($tl in $toolItems) {
             $name = if ($tl.metadata) { $tl.metadata.name } else { $tl.name }
             $props = if ($tl.spec) { $tl.spec } else { $tl.properties }
-            DataPlane-PutExtended -Kind "tools" -Name $name -Type "Tool" -Tags @() -Properties $props
+            $objectType = if ($props.type -eq 'KustoTool' -or $props.type -eq 'PythonFunctionTool') { 'ExtendedAgentTool' } else { 'Tool' }
+            DataPlane-PutExtended -Kind "tools" -Name $name -Type $objectType -Tags @() -Properties $props
         }
     } else {
         Write-Host "tools: $tlCount - WARNING skipped (no data-plane token)"
@@ -1509,12 +1455,14 @@ if ($HttpTriggerUrl) {
 
     if ($whEnabled) {
         # Check if Logic App already exists
-        $existingLa = az resource list -g $ResourceGroup --resource-type Microsoft.Logic/workflows `
-            --query "[?name=='$AgentName-webhook-bridge'].name" -o tsv 2>$null
+        $existingLa = Get-AzResource -ResourceGroupName $ResourceGroup `
+            -ResourceType 'Microsoft.Logic/workflows' -Name "$AgentName-webhook-bridge" `
+            -DefaultProfile $AzContext -ErrorAction SilentlyContinue
         if ($existingLa) {
-            $whCallback = az rest --method POST `
-                --url "/subscriptions/$Subscription/resourceGroups/$ResourceGroup/providers/Microsoft.Logic/workflows/$AgentName-webhook-bridge/triggers/incoming_webhook/listCallbackUrl?api-version=2019-05-01" `
-                --query value -o tsv 2>$null
+            $callback = Invoke-AzJsonRest -Method POST `
+                -Uri "https://management.azure.com/subscriptions/$Subscription/resourceGroups/$ResourceGroup/providers/Microsoft.Logic/workflows/$AgentName-webhook-bridge/triggers/incoming_webhook/listCallbackUrl?api-version=2019-05-01" `
+                -DefaultProfile $AzContext
+            $whCallback = $callback.value
             Write-Host ""
             Write-Host "webhook-bridge: already exists"
             Write-Host "  Callback URL: $whCallback"
@@ -1525,22 +1473,19 @@ if ($HttpTriggerUrl) {
             $scriptPath = $PSScriptRoot
             # Look for bicep template relative to this script (../../bicep/logic-app-bridge.bicep)
             $bicepPath = Join-Path (Split-Path (Split-Path $scriptPath -Parent) -Parent) "bicep" "logic-app-bridge.bicep"
-            $location = az group show -n $ResourceGroup --query location -o tsv 2>$null
+            $location = (Get-AzResourceGroup -Name $ResourceGroup -DefaultProfile $AzContext).Location
             try {
-                $laResultRaw = az deployment group create `
-                    --resource-group $ResourceGroup `
-                    --template-file $bicepPath `
-                    --parameters agentName=$AgentName location=$location triggerUrl=$HttpTriggerUrl `
-                    --output json 2>&1
-                $laResult = $laResultRaw | ConvertFrom-Json
-                $laState = $laResult.properties.provisioningState
+                $laResult = New-AzResourceGroupDeployment -ResourceGroupName $ResourceGroup `
+                    -TemplateFile $bicepPath -agentName $AgentName -location $location `
+                    -triggerUrl $HttpTriggerUrl -DefaultProfile $AzContext
+                $laState = $laResult.ProvisioningState
                 if ($laState -eq "Succeeded") {
-                    $whCallback = $laResult.properties.outputs.logicAppCallbackUrl.value
+                    $whCallback = $laResult.Outputs.logicAppCallbackUrl.Value
                     Write-Host "  Webhook bridge deployed"
                     Write-Host "  Callback URL: $whCallback"
                 } else {
                     Write-Host "  Webhook bridge deployment failed"
-                    $laResultRaw | Select-Object -First 10 | Write-Host
+                    $laResult | Format-List | Out-String | Write-Host
                 }
             } catch {
                 Write-Host "  Webhook bridge deployment failed"
@@ -1597,7 +1542,7 @@ if ($DpTokenAvailable) {
     if ($env:ADO_USE_AAD -eq "1" -and $env:ADO_ORG) {
         Write-Host "post_deploy: wiring ADO via your AAD token for $($env:ADO_ORG)"
         try {
-            $aadToken = az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --query accessToken -o tsv 2>$null
+            $aadToken = Get-AzBearerToken -ResourceUrl '499b84ac-1321-427f-aa17-267ca6975798' -DefaultProfile $AzContext
             $token = Get-DpToken
             $headers = @{
                 Authorization  = "Bearer $token"
@@ -1808,7 +1753,7 @@ if ($DpSkippedItems.Count -gt 0) {
     Write-Host "  available in this environment (Cloud Shell MSI)."
     Write-Host ""
     Write-Host "  To apply the remaining items:"
-    Write-Host "    1. From a compliant machine: az login && re-run this script"
+    Write-Host "    1. From a compliant machine: Connect-AzAccount and re-run this script"
     Write-Host "    2. Or configure in the portal: https://sre.azure.com"
     Write-Host ""
     Write-Host "  Skipped:"

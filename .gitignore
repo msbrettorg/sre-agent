@@ -14,3 +14,5 @@ samples/deployment-compliance/skills/.DS_Store
 .playwright-mcp/
 
 .azure/
+.copilot-tracking/
+.gate/

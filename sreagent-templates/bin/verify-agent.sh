@@ -51,11 +51,12 @@ exp_list() {
   fi
 }
 
-API_VERSION="2025-05-01-preview"
+AGENT_API_VERSION="2026-01-01"
+CHILD_API_VERSION="2025-05-01-preview"
 ARM_BASE="https://management.azure.com/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.App/agents/${AGENT}"
 
 # Resolve agent endpoint
-AGENT_JSON=$(az rest -m GET --url "${ARM_BASE}?api-version=${API_VERSION}" -o json 2>/dev/null || echo "{}")
+AGENT_JSON=$(az rest -m GET --url "${ARM_BASE}?api-version=${AGENT_API_VERSION}" -o json 2>/dev/null || echo "{}")
 ENDPOINT=$(echo "$AGENT_JSON" | jq -r '.properties.agentEndpoint // empty')
 if [[ -z "$ENDPOINT" || "$ENDPOINT" == "null" ]]; then
   echo "FAIL: Could not resolve agent endpoint for ${AGENT} in ${RG}"
@@ -78,7 +79,7 @@ dp_get() {
     echo '{}'
   fi
 }
-arm_get() { az rest -m GET --url "${ARM_BASE}$1?api-version=${API_VERSION}" -o json 2>/dev/null || echo "{}"; }
+arm_get() { az rest -m GET --url "${ARM_BASE}$1?api-version=${CHILD_API_VERSION}" -o json 2>/dev/null || echo "{}"; }
 
 PASS=0
 FAIL=0

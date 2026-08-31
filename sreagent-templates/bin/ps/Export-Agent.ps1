@@ -130,7 +130,8 @@ if ($null -ne $Set) {
     }
 }
 
-$API_VERSION = '2025-05-01-preview'
+$AGENT_API_VERSION = '2026-01-01'
+$CHILD_API_VERSION = '2025-05-01-preview'
 $ARM_BASE    = "https://management.azure.com/subscriptions/${Subscription}/resourceGroups/${ResourceGroup}/providers/Microsoft.App/agents/${AgentName}"
 
 # ─────────────────────────── Prerequisites ───────────────────────────
@@ -208,7 +209,7 @@ function Write-Yaml {
 function Invoke-ArmGet {
     param([string]$Url)
     try {
-        $result = (az rest -m GET --url "${Url}?api-version=${API_VERSION}" -o json 2>$null) -join "`n"
+        $result = (az rest -m GET --url "${Url}?api-version=${AGENT_API_VERSION}" -o json 2>$null) -join "`n"
         if ($LASTEXITCODE -ne 0 -or -not $result) { return 'null' }
         return $result
     } catch {
@@ -219,7 +220,7 @@ function Invoke-ArmGet {
 # ── ARM LIST child resources → .value array ──
 function Invoke-ArmList {
     param([string]$ChildType)
-    $url = "${ARM_BASE}/${ChildType}?api-version=${API_VERSION}"
+    $url = "${ARM_BASE}/${ChildType}?api-version=${CHILD_API_VERSION}"
     try {
         $result = (az rest -m GET --url $url -o json 2>$null) -join "`n"
         if ($LASTEXITCODE -ne 0 -or -not $result) { return '[]' }

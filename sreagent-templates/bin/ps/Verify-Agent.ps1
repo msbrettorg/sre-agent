@@ -58,9 +58,9 @@ $ErrorActionPreference = 'Stop'
 $PrereqScript = Join-Path $PSScriptRoot 'Check-Prerequisites.ps1'
 if (Test-Path $PrereqScript) {
     . $PrereqScript
-    if (-not (Test-Prerequisites -IncludeCurl)) { exit 1 }
+    if (-not (Test-Prerequisites)) { exit 1 }
 } else {
-    foreach ($cmd in @('jq', 'az', 'curl')) {
+    foreach ($cmd in @('jq', 'Get-AzContext', 'Invoke-AzRestMethod')) {
         if (-not (Get-Command $cmd -ErrorAction SilentlyContinue)) {
             Write-Host "Error: $cmd is required but not found." -ForegroundColor Red
             exit 1
@@ -94,11 +94,14 @@ function Get-ExpList {
 
 # ─────────────────────────── ARM + Data-plane setup ───────────────────────────
 
-$API_VERSION = '2025-05-01-preview'
+$AGENT_API_VERSION = '2026-01-01'
+$CHILD_API_VERSION = '2025-05-01-preview'
 $ARM_BASE    = "https://management.azure.com/subscriptions/${Subscription}/resourceGroups/${ResourceGroup}/providers/Microsoft.App/agents/${AgentName}"
+$AzPowerShellPath = Join-Path $PSScriptRoot 'Az-PowerShell.ps1'
+. $AzPowerShellPath
+$AzContext = Get-RequiredAzContext -SubscriptionId $Subscription
 
-$AgentJson = (az rest -m GET --url "${ARM_BASE}?api-version=${API_VERSION}" -o json 2>$null) -join "`n"
-if (-not $AgentJson) { $AgentJson = '{}' }
+$AgentJson = Invoke-AzRestContent -Method GET -Uri "${ARM_BASE}?api-version=${AGENT_API_VERSION}" -DefaultProfile $AzContext
 
 $Endpoint = $AgentJson | Invoke-Jq -Raw -Filter '.properties.agentEndpoint // empty'
 if (-not $Endpoint -or $Endpoint -eq 'null') {
@@ -106,20 +109,14 @@ if (-not $Endpoint -or $Endpoint -eq 'null') {
     exit 1
 }
 
-$Token = az account get-access-token --resource https://azuresre.dev --query accessToken -o tsv 2>$null
-if (-not $Token) {
-    Write-Host "FAIL: Could not get data-plane token" -ForegroundColor Red
-    exit 1
-}
-
 function Invoke-Dp {
     param([string]$Path)
-    $raw = (curl -sS "${Endpoint}${Path}" -H "Authorization: Bearer $Token" 2>$null) -join "`n"
-    # Validate response is JSON; return empty object/array fallback if not
+    $raw = Invoke-AzRestContent -Method GET -Uri "${Endpoint}${Path}" `
+        -ResourceId 'https://azuresre.dev' -DefaultProfile $AzContext
     if ($raw) {
         try {
-            $null = $raw | jq -e 'type' 2>$null
-            if ($LASTEXITCODE -eq 0) { return $raw }
+            $null = $raw | ConvertFrom-Json
+            return $raw
         } catch { }
     }
     return '{}'
@@ -127,7 +124,8 @@ function Invoke-Dp {
 
 function Invoke-Arm {
     param([string]$Path)
-    $result = (az rest -m GET --url "${ARM_BASE}${Path}?api-version=${API_VERSION}" -o json 2>$null) -join "`n"
+    $result = Invoke-AzRestContent -Method GET `
+        -Uri "${ARM_BASE}${Path}?api-version=${CHILD_API_VERSION}" -DefaultProfile $AzContext
     if (-not $result) { return '{}' }
     return $result
 }

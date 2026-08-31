@@ -132,7 +132,7 @@ data "azurerm_application_insights" "existing_ai" {
 
 resource "azapi_resource" "sre_agent" {
   schema_validation_enabled = false
-  type                      = "Microsoft.App/agents@2025-05-01-preview"
+  type                      = "Microsoft.App/agents@2026-01-01"
   name                      = var.agent_name
   location                  = var.location
   parent_id                 = azurerm_resource_group.agent.id

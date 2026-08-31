@@ -59,9 +59,9 @@ if ($PSVersionTable.PSVersion.Major -ge 7 -and $PSVersionTable.PSVersion.Minor -
 $PrereqScript = Join-Path $PSScriptRoot 'Check-Prerequisites.ps1'
 if (Test-Path $PrereqScript) {
     . $PrereqScript
-    if (-not (Test-Prerequisites -IncludePython -IncludeCurl)) { exit 1 }
+    if (-not (Test-Prerequisites -IncludePython)) { exit 1 }
 } else {
-    foreach ($cmd in @('jq', 'az', 'curl', 'python3')) {
+    foreach ($cmd in @('jq', 'python3', 'Get-AzContext', 'Invoke-AzRestMethod')) {
         if (-not (Get-Command $cmd -ErrorAction SilentlyContinue)) {
             Write-Host "Error: $cmd is required but not found." -ForegroundColor Red
             exit 1
@@ -72,13 +72,20 @@ if (Test-Path $PrereqScript) {
 
 # ─────────────────────────── ARM setup ───────────────────────────
 
-$API_VERSION = '2025-05-01-preview'
+$AGENT_API_VERSION = '2026-01-01'
+$CHILD_API_VERSION = '2025-05-01-preview'
 $ARM_BASE    = "https://management.azure.com/subscriptions/${Subscription}/resourceGroups/${ResourceGroup}/providers/Microsoft.App/agents/${AgentName}"
+$AzPowerShellPath = Join-Path $PSScriptRoot 'Az-PowerShell.ps1'
+. $AzPowerShellPath
+$AzContext = Get-RequiredAzContext -SubscriptionId $Subscription
 
 # ─────────────────────────── Check if agent exists ───────────────────────────
 
-$AgentJson = (az rest -m GET --url "${ARM_BASE}?api-version=${API_VERSION}" -o json 2>$null) -join "`n"
-if (-not $AgentJson) { $AgentJson = '{}' }
+try {
+    $AgentJson = Invoke-AzRestContent -Method GET -Uri "${ARM_BASE}?api-version=${AGENT_API_VERSION}" -DefaultProfile $AzContext
+} catch {
+    $AgentJson = '{}'
+}
 
 $Endpoint = $AgentJson | Invoke-Jq -Raw -Filter '.properties.agentEndpoint // empty'
 if (-not $Endpoint -or $Endpoint -eq 'null') {
@@ -146,15 +153,10 @@ if (-not $Endpoint -or $Endpoint -eq 'null') {
 
 # ─────────────────────────── Data-plane token ───────────────────────────
 
-$Token = az account get-access-token --resource https://azuresre.dev --query accessToken -o tsv 2>$null
-if (-not $Token) {
-    Write-Host 'FAIL: Could not get data-plane token' -ForegroundColor Red
-    exit 1
-}
-
 function Invoke-Dp {
     param([string]$Path)
-    (curl -sS "${Endpoint}${Path}" -H "Authorization: Bearer $Token" 2>$null) -join "`n"
+    Invoke-AzRestContent -Method GET -Uri "${Endpoint}${Path}" `
+        -ResourceId 'https://azuresre.dev' -DefaultProfile $AzContext
 }
 
 # ─────────────────────────── Results tracking ───────────────────────────
@@ -324,8 +326,9 @@ Compare-Items 'repos' (Join-Path $ConfigDir 'config/repos') $deployedRepos
 
 # ─────────────────────────── Connectors (toggle-based count check) ───────────────────────────
 
-$deployedConnRaw = az rest -m GET --url "${ARM_BASE}/DataConnectors?api-version=${API_VERSION}" --query 'value[].name' -o tsv 2>$null
-$deployedConnCt  = @($deployedConnRaw -split "`n" | Where-Object { $_ }).Count
+$deployedConnResponse = Invoke-AzJsonRest -Method GET `
+    -Uri "${ARM_BASE}/DataConnectors?api-version=${CHILD_API_VERSION}" -DefaultProfile $AzContext
+$deployedConnCt = @($deployedConnResponse.value).Count
 
 $connFile = Join-Path $ConfigDir 'connectors.json'
 $configConnCt = 0

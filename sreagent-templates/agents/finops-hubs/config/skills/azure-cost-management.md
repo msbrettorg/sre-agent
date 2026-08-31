@@ -126,6 +126,8 @@ For detailed documentation: `references/azure-credits.md`
 
 Track MACC balance, decrements, milestone progress, eligible spend.
 
+MACC is a billing-account contractual spending agreement. It is not an Azure Reservation, savings plan, capacity reservation, or commitment-discount metric. Use only billing-account Consumption Lots and Events with `source` or `lotSource` equal to `ConsumptionCommitment` for MACC amount, remaining balance, decrement, burn, progress, or status. Never infer those values from FinOps Hub `Costs()`, `Transactions()`, reservation or savings-plan purchases, recommendations, utilization, coverage, or waste.
+
 For detailed documentation: `references/azure-macc.md`
 
 ## Reference documentation

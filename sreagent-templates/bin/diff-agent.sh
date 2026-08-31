@@ -19,11 +19,12 @@ RG="${2:?resource-group required}"
 AGENT="${3:?agent-name required}"
 CONFIG_DIR="${4:?config-directory required}"
 
-API_VERSION="2025-05-01-preview"
+AGENT_API_VERSION="2026-01-01"
+CHILD_API_VERSION="2025-05-01-preview"
 ARM_BASE="https://management.azure.com/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.App/agents/${AGENT}"
 
 # Check if agent exists
-AGENT_JSON=$(az rest -m GET --url "${ARM_BASE}?api-version=${API_VERSION}" -o json 2>/dev/null || echo "{}")
+AGENT_JSON=$(az rest -m GET --url "${ARM_BASE}?api-version=${AGENT_API_VERSION}" -o json 2>/dev/null || echo "{}")
 ENDPOINT=$(echo "$AGENT_JSON" | jq -r '.properties.agentEndpoint // empty')
 
 if [[ -z "$ENDPOINT" || "$ENDPOINT" == "null" ]]; then
@@ -205,7 +206,7 @@ DEPLOYED_REPOS=$(dp_get "/api/v2/repos" | jq -r '(.value // .)[].name' 2>/dev/nu
 compare_items "repos" "${CONFIG_DIR}/config/repos" "$DEPLOYED_REPOS"
 
 # Connectors (toggle-based, just check count)
-DEPLOYED_CONN=$(az rest -m GET --url "${ARM_BASE}/DataConnectors?api-version=${API_VERSION}" --query "value[].name" -o tsv 2>/dev/null | tr '\n' ' ')
+DEPLOYED_CONN=$(az rest -m GET --url "${ARM_BASE}/DataConnectors?api-version=${CHILD_API_VERSION}" --query "value[].name" -o tsv 2>/dev/null | tr '\n' ' ')
 CONFIG_CONN_CT=$(jq '.toggles | to_entries | map(select(.key | startswith("enable")) | select(.value == true)) | length' "${CONFIG_DIR}/connectors.json" 2>/dev/null || echo 0)
 DEPLOYED_CONN_CT=$(echo "$DEPLOYED_CONN" | wc -w | tr -d ' ')
 if [[ "$CONFIG_CONN_CT" -eq "$DEPLOYED_CONN_CT" ]]; then

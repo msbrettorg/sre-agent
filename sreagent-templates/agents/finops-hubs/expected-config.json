@@ -39,7 +39,7 @@
     "azure-check-zone-peers",
     "aks-upgrade-capacity-planning"
   ],
-  "tools": 51,
+  "tools": 66,
   "enabledTools": [
     "KustoClient",
     "PlotAreaChartWithCorrelation",

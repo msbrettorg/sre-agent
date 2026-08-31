@@ -7,6 +7,15 @@ description: MACC is a contractual commitment to spend a specific amount on Azur
 
 Understanding what counts toward MACC is critical to avoid surprises.
 
+## Contract Evidence Boundary
+
+MACC is a billing-account contractual spending agreement. It is not an Azure Reservation, savings plan, capacity reservation, or commitment-discount metric.
+
+- Use the Consumption Lots API with `source=ConsumptionCommitment` for the contractual amount, remaining balance, dates, and status.
+- Use the Consumption Events API with `lotSource=ConsumptionCommitment` for invoiced decrements and resulting balances.
+- Do not use FinOps Hub `Costs()` or `Transactions()`, reservation or savings-plan purchases, recommendations, utilization, coverage, or waste to calculate or infer MACC amount, remaining balance, decrement, burn, progress, or status.
+- If Lots and Events evidence is unavailable, report `INSUFFICIENT MACC EVIDENCE`.
+
 **Counts toward MACC:**
 - Direct Azure consumption billed to your account
 - Azure Prepayment purchases (the purchase itself, not consumption from it)
@@ -93,7 +102,7 @@ Milestones are not exposed via API - use portal to verify.
 When behind on commitment:
 
 1. **Accelerate planned projects** - Move deployments forward
-2. **Purchase Reservations/Savings Plans** - Purchases count toward MACC
+2. **Review eligible Azure services and Marketplace offers** - Validate eligibility against the MACC billing-account experience
 3. **Azure Marketplace** - Find "Azure benefit eligible" solutions
 4. **Contact Microsoft** - Discuss commitment amendments
 

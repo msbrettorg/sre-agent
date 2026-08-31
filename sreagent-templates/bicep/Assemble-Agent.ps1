@@ -63,6 +63,8 @@ if (-not (Test-Path $InvokeJqPath)) {
     $InvokeJqPath = Join-Path $PSScriptRoot '../bin/ps/Invoke-Jq.ps1'
 }
 . $InvokeJqPath
+$AzPowerShellPath = Join-Path (Split-Path $PSScriptRoot -Parent) 'bin/ps/Az-PowerShell.ps1'
+. $AzPowerShellPath
 
 # ── Resolve Python executable (python3 on Windows may be a Store stub) ──
 $Python = $null
@@ -238,6 +240,7 @@ $agentJson = Get-Content (Join-Path $ConfigDir 'agent.json') -Raw
 $agentName      = $agentJson | jq -r '.identity.agentName'
 $agentRg        = $agentJson | jq -r '.identity.resourceGroup'
 $agentSub       = $agentJson | Invoke-Jq -Raw -Filter '.identity.subscription // empty'
+$AzContext = if ($agentSub) { Get-RequiredAzContext -SubscriptionId $agentSub } else { $null }
 $agentLoc       = $agentJson | jq -r '.identity.location'
 $targetRgs      = $agentJson | Invoke-Jq -Compact -Filter 'if .identity.targetResourceGroups | type == "array" then .identity.targetResourceGroups elif .identity.targetResourceGroups | type == "string" and length > 0 then [.identity.targetResourceGroups | split(",")[] | gsub("^\\s+|\\s+$"; "")] else [] end'
 $access         = $agentJson | jq -r '.access.accessLevel'
@@ -292,7 +295,12 @@ if (Test-Path $connFile -PathType Leaf) {
 
         if ($needsAppId) {
             Write-Log "  resolving AppInsights AppId for connector '$($c.name)'"
-            $appId = az resource show --ids $aiId --query 'properties.AppId' -o tsv 2>$null
+            if (-not $AzContext) {
+                Write-Error "A subscription is required in agent.json to resolve AppInsights resource: $aiId"
+                exit 1
+            }
+            $aiResource = Invoke-AzJsonRest -Method GET -Uri "https://management.azure.com${aiId}?api-version=2020-02-02" -DefaultProfile $AzContext
+            $appId = $aiResource.properties.AppId
             if ([string]::IsNullOrWhiteSpace($appId)) {
                 Write-Error "Could not resolve AppId for AppInsights resource: $aiId. Ensure UAMI/principal has Reader on this resource."
                 exit 1
@@ -651,11 +659,10 @@ Write-Log "Wrote $extrasSize bytes"
 Write-Host ''
 Write-Info 'Assembly complete'
 Write-Host ''
-Write-Host "  $ParamsFile  <- for deploy.sh (Bicep)"
-Write-Host "  $ExtrasFile  <- for apply-extras.sh (data-plane)"
+Write-Host "  $ParamsFile  <- for Deploy-Agent.ps1 (Bicep)"
+Write-Host "  $ExtrasFile  <- for Apply-Extras.ps1 (data-plane)"
 Write-Host ''
-$subDisplay = if ($agentSub) { $agentSub } else { '$(az account show -q id -o tsv)' }
 Write-Host "Deploy with:"
-Write-Host "  ./deploy.sh $ParamsFile"
-Write-Host "  ./apply-extras.sh $subDisplay $agentRg $agentName $ExtrasFile"
+Write-Host "  ./bin/ps/Deploy-Agent.ps1 -InputPath $ConfigDir"
+Write-Host "  ./bicep/Apply-Extras.ps1 -Subscription $agentSub -ResourceGroup $agentRg -AgentName $agentName -ExtrasFile $ExtrasFile"
 Write-Host ''

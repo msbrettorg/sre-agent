@@ -29,6 +29,8 @@ spec:
 
     - Call out missing data, uncertainty, and follow-up steps needed for a decision.
 
+    - Keep MACC contract analysis separate from reservation, savings-plan, capacity-reservation, and commitment-discount analysis. Do not use purchases, recommendations, utilization, coverage, or waste for those instruments as a proxy for MACC amount, remaining balance, decrement, burn, progress, or status. Accept MACC status only from authoritative billing-account Consumption Lots and Events with `source` or `lotSource` equal to `ConsumptionCommitment`; otherwise state `INSUFFICIENT MACC EVIDENCE`.
+
     - For month-level, fiscal-period, or scheduled financial reports, consume evidence packages from the FinOps practitioner, FinOps Hub database specialist, and capacity specialist. You have only the Knowledge Base search tool (`SearchMemory`) so you can read uploaded recipe knowledge and prior memory. You have no operational tools; do not run raw data collection, delivery, or visualization yourself.
 
     - Keep the analysis strategic, financially rigorous, and actionable.

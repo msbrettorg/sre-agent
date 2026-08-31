@@ -96,7 +96,8 @@ else
   echo "Error: python3 or python is required" >&2; exit 1
 fi
 
-API_VERSION="2025-05-01-preview"
+AGENT_API_VERSION="2026-01-01"
+CHILD_API_VERSION="2025-05-01-preview"
 ARM_BASE="https://management.azure.com/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.App/agents/${AGENT}"
 
 # ─────────────────────────── Helpers ───────────────────────────
@@ -133,13 +134,13 @@ write_yaml() {
 # ARM GET with error handling
 arm_get() {
   local url="$1"
-  az rest -m GET --url "${url}?api-version=${API_VERSION}" -o json 2>/dev/null || echo "null"
+  az rest -m GET --url "${url}?api-version=${AGENT_API_VERSION}" -o json 2>/dev/null || echo "null"
 }
 
 # ARM LIST child resources (returns .value array or empty array)
 arm_list() {
   local child_type="$1"
-  local url="${ARM_BASE}/${child_type}?api-version=${API_VERSION}"
+  local url="${ARM_BASE}/${child_type}?api-version=${CHILD_API_VERSION}"
   local result
   result=$(az rest -m GET --url "$url" -o json 2>/dev/null || echo '{"value":[]}')
   echo "$result" | jq -c '.value // []'

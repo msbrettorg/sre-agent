@@ -70,6 +70,8 @@ $ErrorActionPreference = 'Stop'
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 . (Join-Path $ScriptDir 'Check-Prerequisites.ps1')
 if (-not (Test-Prerequisites -IncludePython)) { exit 1 }
+$AzPowerShellPath = Join-Path $ScriptDir 'Az-PowerShell.ps1'
+. $AzPowerShellPath
 
 # ── Resolve paths ──
 $BinDir = Split-Path -Parent $ScriptDir   # bin/ps -> bin
@@ -113,10 +115,6 @@ function Get-JsonValue {
 }
 
 # ── Validate prerequisites ──
-if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
-    Write-Fail 'Error: Azure CLI (az) is required but not found.'
-    exit 1
-}
 if (-not (Get-Command jq -ErrorAction SilentlyContinue)) {
     Write-Fail 'Error: jq is required but not found.'
     exit 1
@@ -155,18 +153,14 @@ if ($IsDirectory) {
 
     $AssembleScript = Join-Path $BicepDir 'Assemble-Agent.ps1'
     if (-not (Test-Path $AssembleScript)) {
-        # Fallback: try bash assemble
-        $AssembleScript = Join-Path $BicepDir 'assemble-agent.sh'
+        Write-Fail "Error: PowerShell assembler not found at $AssembleScript"
+        exit 1
     }
 
     $AssembleTmp = Join-Path ([System.IO.Path]::GetTempPath()) "assembled-$(New-Guid)"
     $AssembleOut = $AssembleTmp
 
-    if ($AssembleScript -match '\.ps1$') {
-        & $AssembleScript -ConfigDir $InputPath -Output $AssembleOut
-    } else {
-        bash $AssembleScript $InputPath --output $AssembleOut
-    }
+    & $AssembleScript -ConfigDir $InputPath -Output $AssembleOut
 
     $ParametersFile = "${AssembleOut}.parameters.json"
     $ExtrasFile = "${AssembleOut}.extras.json"
@@ -212,11 +206,20 @@ $UpgradeChannel = Get-Param 'upgradeChannel' 'Preview'
 $ModelProvider  = Get-Param 'defaultModelProvider' 'Anthropic'
 $MonthlyLimit   = Get-Param 'monthlyAgentUnitLimit' 10000
 
-$SubInfo = az account show --output json 2>$null | ConvertFrom-Json
-$SubscriptionId   = $SubInfo.id
-$SubscriptionName = $SubInfo.name
+$RequestedSubscriptionId = if ($IsDirectory) {
+    (Get-Content (Join-Path $InputPath 'agent.json') -Raw | ConvertFrom-Json).identity.subscription
+} else {
+    (Get-AzContext).Subscription.Id
+}
+if (-not $RequestedSubscriptionId) {
+    Write-Fail 'Error: agent.json must specify identity.subscription.'
+    exit 1
+}
+$AzContext = Get-RequiredAzContext -SubscriptionId $RequestedSubscriptionId
+$SubscriptionId = $AzContext.Subscription.Id
+$SubscriptionName = $AzContext.Subscription.Name
 
-$RgExists = (az group exists -n $ResourceGroup 2>$null) -eq 'true'
+$RgExists = $null -ne (Get-AzResourceGroup -Name $ResourceGroup -DefaultProfile $AzContext -ErrorAction SilentlyContinue)
 $RgStatus = if ($RgExists) { '(exists)' } else { '(will be created)' }
 $TargetRGsStr = if ($TargetRGs -is [array]) { $TargetRGs -join ', ' } else { $TargetRGs }
 if (-not $TargetRGsStr) { $TargetRGsStr = '<none>' }
@@ -372,24 +375,20 @@ if ($WhatIf_) {
     Write-Header '── What-if validation (ARM preflight) ──'
     Write-Host ''
 
-    $whatIfResult = az deployment sub what-if `
-        --location $Location `
-        --name $DeploymentName `
-        --template-file $Template `
-        --parameters "@$ParametersFile" `
-        --no-pretty-print 2>&1
-
-    $whatIfExit = $LASTEXITCODE
-    Write-Host ($whatIfResult -join "`n")
-
-    if ($whatIfExit -eq 0) {
+    try {
+        $whatIfResult = New-AzSubscriptionDeployment -Name $DeploymentName `
+            -Location $Location -TemplateFile $Template `
+            -TemplateParameterFile $ParametersFile -DefaultProfile $AzContext -WhatIf
+        Write-Host ($whatIfResult | Out-String)
         Write-Host ''
         Write-Success '✅ What-if passed — deployment should succeed.'
-    } else {
+        exit 0
+    } catch {
         Write-Host ''
         Write-Fail '❌ What-if found errors — fix before deploying.'
+        Write-Fail $_.Exception.Message
+        exit 1
     }
-    exit $whatIfExit
 }
 
 # ── Pre-deploy: auto-create VNet subnet with delegation if networkConfiguration.type=vnet ──
@@ -424,22 +423,29 @@ if ($IsDirectory) {
                 $_vnet_name = $parts[$vnetIdx]
                 $_subnet_name = $parts[$subnetIdx]
 
-                $subnetExists = az network vnet subnet show -g $_vnet_rg --vnet-name $_vnet_name -n $_subnet_name 2>$null
-                if (-not $subnetExists) {
+                $vnet = Get-AzVirtualNetwork -ResourceGroupName $_vnet_rg `
+                    -Name $_vnet_name -DefaultProfile $AzContext
+                $subnet = Get-AzVirtualNetworkSubnetConfig -Name $_subnet_name `
+                    -VirtualNetwork $vnet -ErrorAction SilentlyContinue
+                $delegation = New-AzDelegation -Name 'Microsoft.App.environments' `
+                    -ServiceName 'Microsoft.App/environments'
+                if (-not $subnet) {
                     Write-Header "── Creating VNet subnet with Microsoft.App/environments delegation ──"
                     Write-Host "  VNet: $_vnet_name  Subnet: $_subnet_name  Prefix: $netSubnetPrefix"
-                    az network vnet subnet create -g $_vnet_rg --vnet-name $_vnet_name -n $_subnet_name `
-                        --address-prefixes $netSubnetPrefix --delegations 'Microsoft.App/environments' --output none 2>&1
-                    if ($LASTEXITCODE -ne 0) { Write-Host '  ⚠ Failed to create subnet — VNet integration may fail' }
-                    else { Write-Host '  ✅ Subnet created' }
+                    $null = Add-AzVirtualNetworkSubnetConfig -Name $_subnet_name `
+                        -VirtualNetwork $vnet -AddressPrefix $netSubnetPrefix `
+                        -Delegation $delegation
+                    $null = Set-AzVirtualNetwork -VirtualNetwork $vnet -DefaultProfile $AzContext
+                    Write-Host '  ✅ Subnet created'
                 } else {
-                    $delegation = az network vnet subnet show -g $_vnet_rg --vnet-name $_vnet_name -n $_subnet_name `
-                        --query 'delegations[0].serviceName' -o tsv 2>$null
-                    if ($delegation -ne 'Microsoft.App/environments') {
+                    $hasDelegation = @($subnet.Delegations).ServiceName -contains 'Microsoft.App/environments'
+                    if (-not $hasDelegation) {
                         Write-Host "  ⚠ Subnet $_subnet_name exists but missing Microsoft.App/environments delegation"
                         Write-Host '    Adding delegation...'
-                        az network vnet subnet update -g $_vnet_rg --vnet-name $_vnet_name -n $_subnet_name `
-                            --delegations 'Microsoft.App/environments' --output none 2>&1
+                        $null = Set-AzVirtualNetworkSubnetConfig -Name $_subnet_name `
+                            -VirtualNetwork $vnet -AddressPrefix $subnet.AddressPrefix `
+                            -Delegation $delegation
+                        $null = Set-AzVirtualNetwork -VirtualNetwork $vnet -DefaultProfile $AzContext
                     } else {
                         Write-Host "  VNet subnet $_subnet_name ready (delegation: Microsoft.App/environments)"
                     }
@@ -451,86 +457,61 @@ if ($IsDirectory) {
 
 # ── Auto-detect redeploy: skip role assignments to avoid RoleAssignmentExists ──
 $SkipRbacParam = ''
-$agentExistsCheck = az resource show -g $ResourceGroup --resource-type 'Microsoft.App/agents' -n $AgentName --query 'name' -o tsv 2>$null
-if ($agentExistsCheck) {
+$agentResourceUri = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroup/providers/Microsoft.App/agents/$AgentName`?api-version=2026-01-01"
+try {
+    $agentExistsCheck = Invoke-AzJsonRest -Method GET -Uri $agentResourceUri -DefaultProfile $AzContext
+} catch {
+    $agentExistsCheck = $null
+}
+if ($null -ne $agentExistsCheck) {
     Write-Host "  Agent '$AgentName' already exists — skipping role assignments on redeploy."
     $SkipRbacParam = 'skipRoleAssignments=true'
 }
 
 # ── Run the deployment ──
 Write-Host 'Starting deployment (this typically takes 3-5 min)...'
-Write-Host "Tip: open another terminal and run 'az deployment operation sub list -n $DeploymentName -o table' to watch progress."
 Write-Host ''
 
-# Capture stdout (JSON) cleanly; let stderr (warnings/errors) flow to console
-$deployArgs = @(
-    'deployment', 'sub', 'create',
-    '--location', $Location,
-    '--name', $DeploymentName,
-    '--template-file', $Template,
-    '--parameters', "@$ParametersFile",
-    '--output', 'json'
-)
-if ($SkipRbacParam) { $deployArgs += @('--parameters', $SkipRbacParam) }
-$deployJson = & az @deployArgs | Out-String
-
-Write-Host $deployJson
-
-# ── Post-deploy: check state ──
-$deployResult = $null
 try {
-    $deployResult = $deployJson | ConvertFrom-Json
-} catch { }
+    $deploymentParameters = @{
+        Name                  = $DeploymentName
+        Location              = $Location
+        TemplateFile          = $Template
+        TemplateParameterFile = $ParametersFile
+        DefaultProfile        = $AzContext
+        ErrorAction           = 'Stop'
+    }
+    if ($SkipRbacParam) {
+        $deploymentParameters.skipRoleAssignments = $true
+    }
+    $deployResult = New-AzSubscriptionDeployment @deploymentParameters
+    Write-Host ($deployResult | Format-List | Out-String)
+} catch {
+    $deployResult = $null
+    $deploymentError = $_
+}
 
 $State = 'Failed'
 if ($deployResult) {
-    $State = if ($deployResult.properties.provisioningState) { $deployResult.properties.provisioningState } else { 'Failed' }
+    $State = if ($deployResult.ProvisioningState) { $deployResult.ProvisioningState } else { 'Failed' }
 }
 
 if ($State -ne 'Succeeded') {
     Write-Host ''
     Write-Fail '══════════ Deployment FAILED ══════════'
 
-    # Extract error messages
-    if ($deployResult) {
-        $errMsgs = @()
-        function Find-ErrorMessages($obj) {
-            if ($null -eq $obj) { return }
-            if ($obj -is [PSCustomObject]) {
-                if ($obj.PSObject.Properties['message']) {
-                    $msg = $obj.message
-                    if ($msg -and $msg -notmatch '^At least') {
-                        $script:errMsgs += $msg
-                    }
-                }
-                foreach ($prop in $obj.PSObject.Properties) {
-                    Find-ErrorMessages $prop.Value
-                }
-            } elseif ($obj -is [array]) {
-                foreach ($item in $obj) {
-                    Find-ErrorMessages $item
-                }
-            }
-        }
-        Find-ErrorMessages $deployResult
-        if ($errMsgs.Count -gt 0) {
-            Write-Host ''
-            Write-Host '  Root cause:'
-            $errMsgs | Select-Object -First 3 | ForEach-Object { Write-Host "    $_" }
-        }
+    if ($deploymentError) {
+        Write-Host "  Root cause: $($deploymentError.Exception.Message)"
     }
-
-    Write-Host ''
-    Write-Host "  Debug: az deployment operation sub list -n $DeploymentName -o table"
     Write-Host ''
     exit 1
 }
 
 Write-Host ''
 Write-Header '─────────────── Deployment Succeeded ───────────────'
-$portalUrl       = $deployResult.properties.outputs.agentPortalUrl.value
-$rgPortalUrl     = $deployResult.properties.outputs.resourceGroupPortalUrl.value
-$dataPlaneUrl    = $deployResult.properties.outputs.agentDataPlaneUrl.value
+$portalUrl       = $deployResult.Outputs.agentPortalUrl.Value
+$rgPortalUrl     = $deployResult.Outputs.resourceGroupPortalUrl.Value
+$dataPlaneUrl    = $deployResult.Outputs.agentDataPlaneUrl.Value
 Write-Host "  Agent (portal):  $portalUrl"
 Write-Host "  Resource group:  $rgPortalUrl"
 Write-Host "  Data plane:      $dataPlaneUrl"
@@ -588,16 +569,7 @@ if ($ExtrasFile -and (Test-Path $ExtrasFile -ErrorAction SilentlyContinue)) {
             if ($Force) { $applyParams['Force'] = $true }
             & $ApplyExtrasScript @applyParams
         } else {
-            # Fallback to bash
-            $applyExtrasBash = Join-Path $BicepDir 'apply-extras.sh'
-            if (Test-Path $applyExtrasBash) {
-                $env:INPUT = $InputPath
-                $forceArg = if ($Force) { '--force' } else { '' }
-                bash $applyExtrasBash $SubscriptionId $ResourceGroup $AgentName $ExtrasFile $forceArg
-            } else {
-                Write-Host "  ⚠ Apply-Extras script not found. Run manually:"
-                Write-Host "    Apply-Extras.ps1 -SubscriptionId $SubscriptionId -ResourceGroup $ResourceGroup -AgentName $AgentName -ExtrasFile $ExtrasFile"
-            }
+            throw "Apply-Extras.ps1 not found at $ApplyExtrasScript"
         }
     } else {
         Write-Host 'No data-plane extras to apply.'
@@ -612,7 +584,7 @@ Write-Header '──────────────────────
 # ── Deployment log ──
 $LogDir = if ($IsDirectory) { $InputPath } else { Split-Path $InputPath }
 $DeployLog = Join-Path $LogDir "deploy-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
-$Duration = if ($deployResult.properties.duration) { $deployResult.properties.duration } else { '?' }
+$Duration = if ($deployResult -and $deployResult.PSObject.Properties['Duration'] -and $deployResult.Duration) { $deployResult.Duration } else { '?' }
 
 try {
     @"
@@ -641,17 +613,7 @@ if ($IsDirectory) {
             $VerifyOutput = $_.Exception.Message
         }
     } else {
-        # Fallback to bash
-        $verifyBash = Join-Path (Split-Path $ScriptDir) 'verify-agent.sh'
-        if (Test-Path $verifyBash) {
-            try {
-                $VerifyOutput = bash $verifyBash $SubscriptionId $ResourceGroup $AgentName --expected $InputPath 2>&1 | Out-String
-            } catch {
-                $VerifyOutput = $_.Exception.Message
-            }
-        } else {
-            $VerifyOutput = '(Verify-Agent script not found — skipping)'
-        }
+        $VerifyOutput = "(Verify-Agent.ps1 not found at $VerifyScript)"
     }
     Write-Host $VerifyOutput
 
@@ -688,164 +650,91 @@ $UamiPrincipal = ''
 $AgentId = $null
 $AgentSystemPrincipal = ''
 try {
-    $UamiId = $deployResult.properties.outputs.managedIdentityId.value
+    $UamiId = $deployResult.Outputs.managedIdentityId.Value
     if ($UamiId) {
-        $UamiPrincipal = az identity show --ids $UamiId --query principalId -o tsv 2>$null
+        $uamiResource = Invoke-AzJsonRest -Method GET `
+            -Uri "https://management.azure.com${UamiId}?api-version=2023-01-31" `
+            -DefaultProfile $AzContext
+        $UamiPrincipal = $uamiResource.properties.principalId
     }
-    $AgentId = $deployResult.properties.outputs.agentId.value
+    $AgentId = $deployResult.Outputs.agentId.Value
     if ($AgentId) {
-        $AgentSystemPrincipal = az resource show --ids $AgentId --api-version 2025-05-01-preview --query identity.principalId -o tsv 2>$null
+        $agentResource = Invoke-AzJsonRest -Method GET `
+            -Uri "https://management.azure.com${AgentId}?api-version=2026-01-01" `
+            -DefaultProfile $AzContext
+        $AgentSystemPrincipal = $agentResource.identity.principalId
     }
 } catch { }
 
 if ($RolesFile -and (Test-Path $RolesFile)) {
     Write-Host ''
-    Write-Header '── Setting up UAMI roles (from roles.yaml) ──'
-    if ($UamiPrincipal) {
-        Write-Host "  UAMI principal ID: $UamiPrincipal"
+    Write-Header '── Setting up roles with Az PowerShell (from roles.yaml) ──'
+    $rolesJson = python3 -c 'import json,sys,yaml; print(json.dumps(yaml.safe_load(open(sys.argv[1])) or {}))' $RolesFile
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not parse roles file: $RolesFile"
     }
-    Write-Host ''
-
-    # Use python3 for YAML parsing (same approach as bash version)
-    $pyScript = @"
-import yaml, sys, os, subprocess
-from urllib.parse import urlparse
-
-uami = '$UamiPrincipal'
-agent_smi = '$AgentSystemPrincipal'
-sub = '$SubscriptionId'
-rg = '$ResourceGroup'
-ag = '$AgentName'
-loc = '$Location'
-
-with open(r'$RolesFile') as f:
-    data = yaml.safe_load(f)
-
-for role in (data.get('roles') or []):
-    rtype = role.get('type', 'manual')
-    name = role.get('name', 'unnamed')
-    instructions = role.get('instructions', '')
-
-    if rtype == 'azure-role':
-        scope = role.get('scope', '')
-        role_id = role.get('role_definition_id', '')
-        print(f'  Granting Azure role: {name}')
-        cmd = f'az role assignment create --assignee-object-id {uami} --assignee-principal-type ServicePrincipal --role "{role_id}" --scope "{scope}"'
-        print(f'    Command: {cmd}')
-        if uami:
-            os.system(cmd)
-        else:
-            print('    SKIPPED - UAMI principal ID not available')
-
-    elif rtype == 'adx-principal':
-        scope = role.get('scope', '')
-        adx_role = role.get('role', 'Viewer')
-        principal = role.get('principal', 'uami')
-        principal_id = agent_smi if principal == 'agent-system' else uami
-        print(f'  Granting ADX role: {name} ({adx_role})')
-        parts = scope.split('/databases/')
-        if adx_role in ('AllDatabasesViewer', 'AllDatabasesAdmin') and principal_id:
-            cluster_name = (urlparse(scope).hostname or '').split('.')[0]
-            assignment_suffix = role.get('assignment_name', 'cluster')
-            assignment_name = f'sre-agent-{ag}-{assignment_suffix}-{principal_id[:8]}'
-            cluster_rg = subprocess.run(
-                ['az', 'kusto', 'cluster', 'list', '--subscription', sub,
-                 '--query', f"[?name=='{cluster_name}'].resourceGroup | [0]", '-o', 'tsv'],
-                capture_output=True, text=True
-            ).stdout.strip()
-            if cluster_name and cluster_rg:
-                result = subprocess.run(
-                    ['az', 'kusto', 'cluster-principal-assignment', 'create',
-                     '--cluster-name', cluster_name, '--resource-group', cluster_rg,
-                     '--principal-id', principal_id, '--principal-type', 'App',
-                     '--role', adx_role, '--principal-assignment-name', assignment_name,
-                     '--subscription', sub, '--only-show-errors'],
-                    capture_output=True, text=True
-                )
-                if result.returncode == 0:
-                    print(f'    ADX {adx_role} granted on cluster {cluster_name}')
-                else:
-                    print(f'    Could not grant ADX {adx_role} on cluster {cluster_name}: {result.stderr.strip()}')
-            else:
-                print(f'    Could not resolve Kusto cluster from scope: {scope}')
-        elif len(parts) == 2 and principal_id:
-            cluster_url = parts[0]
-            db = parts[1]
-            cluster_name = cluster_url.split('/')[-1]
-            cmd = (
-                f'az kusto database-principal-assignment create '
-                f'--cluster-name "{cluster_name}" --database-name "{db}" '
-                f'--principal-id "{principal_id}" --principal-type App --role "{adx_role}" '
-                f'--principal-assignment-name "sre-agent-{ag}" --subscription "{sub}" 2>NUL '
-                f'|| az kusto database add-principal --cluster-name "{cluster_name}" '
-                f'--database-name "{db}" --value name="sre-agent-{ag}" type="App" '
-                f'app-id="{principal_id}" role="{adx_role}" 2>NUL'
-            )
-            if os.system(cmd) == 0:
-                print(f'    ADX {adx_role} granted on {db}')
-            else:
-                print(f'    Could not auto-grant. Run manually:')
-                print(f'    az kusto database add-principal --cluster-name "{cluster_name}" --database-name "{db}" --value name="sre-agent-{ag}" type="App" app-id="{principal_id}" role="{adx_role}"')
-        else:
-            print(f'    Run manually after deploy - scope: {scope}')
-
-    elif rtype == 'token':
-        env_var = role.get('env_var', '')
-        print(f'  Token required: {name}')
-        if env_var:
-            print(f'    Set in connectors.secrets.env: {env_var}=<value>')
-        if instructions:
-            for line in instructions.strip().split('\n'):
-                print(f'    {line}')
-
-    elif rtype == 'manual':
-        print(f'  Manual setup required: {name}')
-        if instructions:
-            for line in instructions.strip().split('\n'):
-                print(f'    {line}')
-        if uami:
-            print(f'    UAMI principal ID: {uami}')
-
-    elif rtype == 'api-connection':
-        api_name = role.get('api', '')
-        conn_name = f'{ag}-{api_name}'
-        print(f'  Creating API connection: {name} ({api_name})')
-        create_cmd = (
-            f'az resource create '
-            f'--resource-group "{rg}" '
-            f'--resource-type "Microsoft.Web/connections" '
-            f'--name "{conn_name}" '
-            f'--location "{loc}" '
-            f'--properties \'{{"displayName":"{name}","api":{{"id":"/subscriptions/{sub}/providers/Microsoft.Web/locations/{loc}/managedApis/{api_name}"}}}}\' '
-            f'--api-version 2016-06-01'
-        )
-        print(f'    Creating connection resource...')
-        if os.system(create_cmd) == 0:
-            consent_cmd = (
-                f'az rest --method POST '
-                f'--url "/subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.Web/connections/{conn_name}/listConsentLinks?api-version=2016-06-01" '
-                f'--body \'{{"parameters":[{{"parameterName":"token","redirectUrl":"https://portal.azure.com"}}]}}\' '
-                f'--query "value[0].link" -o tsv 2>NUL'
-            )
-            result = subprocess.run(consent_cmd, shell=True, capture_output=True, text=True)
-            consent_url = result.stdout.strip()
-            if consent_url:
-                print(f'    Connection created. Open this URL to sign in:')
-                print(f'    {consent_url}')
-            else:
-                print(f'    Connection created. Get consent URL from portal:')
-                print(f'    Portal -> Resource Group -> {conn_name} -> Edit API Connection -> Authorize')
-        else:
-            print(f'    Failed to create connection. Create manually in portal.')
-
-    print()
-"@
-
-    try {
-        $pyScript | python3 -
-    } catch {
-        Write-Host '  Could not process roles.yaml (python3 + pyyaml required)'
+    $roleConfig = $rolesJson | ConvertFrom-Json
+    foreach ($role in @($roleConfig.roles)) {
+        switch ($role.type) {
+            'azure-role' {
+                if (-not $UamiPrincipal) {
+                    throw "UAMI principal ID is required for Azure role '$($role.name)'"
+                }
+                $existingRole = Get-AzRoleAssignment -ObjectId $UamiPrincipal -Scope $role.scope `
+                    -RoleDefinitionId $role.role_definition_id -DefaultProfile $AzContext -ErrorAction SilentlyContinue
+                if (-not $existingRole) {
+                    $null = New-AzRoleAssignment -ObjectId $UamiPrincipal `
+                        -RoleDefinitionId $role.role_definition_id -Scope $role.scope `
+                        -DefaultProfile $AzContext
+                }
+                Write-Host "  ok Azure role: $($role.name)"
+            }
+            'adx-principal' {
+                $principalId = if ($role.principal -eq 'agent-system') {
+                    $AgentSystemPrincipal
+                } else {
+                    $UamiPrincipal
+                }
+                if (-not $principalId) {
+                    throw "Principal ID is required for ADX role '$($role.name)'"
+                }
+                $scopeUri = [uri]$role.scope
+                $clusterName = $scopeUri.Host.Split('.')[0]
+                $cluster = Get-AzKustoCluster -DefaultProfile $AzContext |
+                    Where-Object { $_.Name -eq $clusterName } |
+                    Select-Object -First 1
+                if (-not $cluster) {
+                    throw "Kusto cluster '$clusterName' was not found in subscription $SubscriptionId"
+                }
+                $clusterResourceGroup = if ($cluster.Id -match '/resourceGroups/([^/]+)/') { $Matches[1] } else { $null }
+                if (-not $clusterResourceGroup) {
+                    throw "Could not determine resource group for Kusto cluster '$clusterName' from Id '$($cluster.Id)'"
+                }
+                $assignmentName = "sre-agent-$AgentName-$($role.assignment_name)-$($principalId.Substring(0, 8))"
+                $existingAssignment = Get-AzKustoClusterPrincipalAssignment `
+                    -ResourceGroupName $clusterResourceGroup -ClusterName $cluster.Name `
+                    -PrincipalAssignmentName $assignmentName -DefaultProfile $AzContext `
+                    -ErrorAction SilentlyContinue
+                if (-not $existingAssignment) {
+                    $null = New-AzKustoClusterPrincipalAssignment `
+                        -ResourceGroupName $clusterResourceGroup -ClusterName $cluster.Name `
+                        -PrincipalAssignmentName $assignmentName -PrincipalId $principalId `
+                        -PrincipalType App -Role $role.role -DefaultProfile $AzContext
+                }
+                Write-Host "  ok ADX role: $($role.name)"
+            }
+            'token' {
+                Write-Host "  token required: $($role.name)"
+            }
+            'manual' {
+                Write-Host "  manual setup required: $($role.name)"
+            }
+            default {
+                throw "Unsupported PowerShell role type '$($role.type)' in $RolesFile"
+            }
+        }
     }
+    $RolesFile = ''
 }
 
 # ── Recipe-specific post-deploy instructions ──
@@ -864,9 +753,10 @@ if ($IsDirectory) {
                 # Try to get the Logic App callback URL
                 $WhCallback = ''
                 try {
-                    $WhCallback = az rest --method POST `
-                        --url "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroup/providers/Microsoft.Logic/workflows/$AgentName-webhook-bridge/triggers/incoming_webhook/listCallbackUrl?api-version=2019-05-01" `
-                        --query value -o tsv 2>$null
+                    $callback = Invoke-AzJsonRest -Method POST `
+                        -Uri "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroup/providers/Microsoft.Logic/workflows/$AgentName-webhook-bridge/triggers/incoming_webhook/listCallbackUrl?api-version=2019-05-01" `
+                        -DefaultProfile $AzContext
+                    $WhCallback = $callback.value
                 } catch { }
 
                 Write-Host ''

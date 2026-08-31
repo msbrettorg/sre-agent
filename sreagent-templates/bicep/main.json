@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.38.33.27573",
-      "templateHash": "6683992615531130122"
+      "templateHash": "10668975273002052969"
     }
   },
   "parameters": {
@@ -416,7 +416,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.38.33.27573",
-              "templateHash": "13136387118770597749"
+              "templateHash": "518638084907501507"
             }
           },
           "parameters": {
@@ -608,7 +608,7 @@
             },
             {
               "type": "Microsoft.App/agents",
-              "apiVersion": "2025-05-01-preview",
+              "apiVersion": "2026-01-01",
               "name": "[parameters('agentName')]",
               "location": "[parameters('location')]",
               "identity": {
@@ -791,7 +791,7 @@
                 "mode": "Incremental",
                 "parameters": {
                   "principalId": {
-                    "value": "[reference(resourceId('Microsoft.App/agents', parameters('agentName')), '2025-05-01-preview', 'full').identity.principalId]"
+                    "value": "[reference(resourceId('Microsoft.App/agents', parameters('agentName')), '2026-01-01', 'full').identity.principalId]"
                   },
                   "accessLevel": {
                     "value": "[parameters('accessLevel')]"

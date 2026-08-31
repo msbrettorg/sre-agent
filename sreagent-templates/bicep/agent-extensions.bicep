@@ -134,7 +134,7 @@ var allCommonPrompts   = concat(builtInCommonPrompts,  commonPrompts)
 
 // ─────────── Resource loops ───────────
 
-resource parent 'Microsoft.App/agents@2025-05-01-preview' existing = {
+resource parent 'Microsoft.App/agents@2026-01-01' existing = {
   name: agentName
 }
 

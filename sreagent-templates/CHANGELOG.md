@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Added 15 live-tested FinOps Hub `Quota()` Kusto tools for quota usage,
+  headroom, SKU restrictions, availability-zone mappings, and capacity
+  inventory, assigned only to the FinOps Hub database specialist.
 - Strengthened the `finops-hubs` capacity-resilience contract with deployable
   primary and recovery scale units, temporary demand, allocation-failure
   classification, AKS upgrade readiness, public Azure grounding, and a
@@ -23,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   plugin sources resolve during unattended deployments.
 
 ### Fixed
+- Removed the invalid `finops-hubs` MACC Kusto proxy and required all specialist
+  agents to treat MACC billing-contract evidence as distinct from reservations,
+  savings plans, capacity reservations, and commitment-discount analytics.
 - Enabled every built-in Visualization and Log Query tool in the `finops-hubs`
   portal catalog through a separate built-in override payload, and corrected
   the global access policy to current runtime names including `KustoClient`.

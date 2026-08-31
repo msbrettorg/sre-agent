@@ -446,7 +446,7 @@ fi
 UAMI_ID=$(jq -r '.properties.outputs.managedIdentityId.value // empty' "$TMP" 2>/dev/null)
 UAMI_PRINCIPAL=$(az identity show --ids "$UAMI_ID" --query principalId -o tsv 2>/dev/null || echo "")
 AGENT_ID=$(jq -r '.properties.outputs.agentId.value // empty' "$TMP" 2>/dev/null)
-AGENT_SYSTEM_PRINCIPAL=$(az resource show --ids "$AGENT_ID" --api-version 2025-05-01-preview --query identity.principalId -o tsv 2>/dev/null || echo "")
+AGENT_SYSTEM_PRINCIPAL=$(az resource show --ids "$AGENT_ID" --api-version 2026-01-01 --query identity.principalId -o tsv 2>/dev/null || echo "")
 
 if [[ -n "$ROLES_FILE" && -f "$ROLES_FILE" ]]; then
   echo

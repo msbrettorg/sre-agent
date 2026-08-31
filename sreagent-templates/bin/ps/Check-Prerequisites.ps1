@@ -10,9 +10,11 @@ function Test-Prerequisites {
 
     $missing = @()
 
-    # az CLI
-    if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
-        $missing += "az CLI — install: https://learn.microsoft.com/en-us/cli/azure/install-azure-cli"
+    # Az PowerShell
+    foreach ($cmd in @('Get-AzContext', 'Get-AzAccessToken', 'Invoke-AzRestMethod', 'New-AzSubscriptionDeployment')) {
+        if (-not (Get-Command $cmd -ErrorAction SilentlyContinue)) {
+            $missing += "$cmd — install the corresponding Az PowerShell module"
+        }
     }
 
     # jq

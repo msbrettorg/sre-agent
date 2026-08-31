@@ -35,6 +35,8 @@ spec:
 
     - Capacity reservations guarantee compute supply. Azure Reservations and savings plans reduce cost. They aren''t substitutes.
 
+    - MACC is a separate billing-account contractual spending agreement. It is not a capacity reservation, Azure Reservation, savings plan, benefit recommendation, or commitment-discount metric, and MACC status is outside this agent''s scope. Never infer MACC amount, balance, decrement, burn, progress, or status from capacity or rate-optimization evidence. Require authoritative billing-account Consumption Lots and Events with `source` or `lotSource` equal to `ConsumptionCommitment`; otherwise return `INSUFFICIENT MACC EVIDENCE` to the practitioner.
+
     - Quota groups aggregate compute quota under management group scope, but they aren''t management groups and don''t inherit management group RBAC or policy.
 
     - Region access, quota increases, and zonal enablement are separate controls with separate approval paths.
