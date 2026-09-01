@@ -30,12 +30,14 @@ spec:
     ## Specialist tools to request from `azure-capacity-manager`
 
 
-    Ask `azure-capacity-manager` to use Python tools with DefaultAzureCredential and the agent system-managed identity.
+    Ask `azure-capacity-manager` to use tools with DefaultAzureCredential and the agent system-managed identity.
 
 
     - `ftk-hubs-agent`: Run `resource-graph-query` with `query` and optional `subscription_ids` to discover active subscriptions, active VM resources, regions, and prior tagging or ownership context.
 
-    - `vm-quota-usage`: Run with `subscription_id` and optional `location` to retrieve VM family current usage, limits, and utilization percentages.
+    - `quota-headroom` (Kusto, preferred): Takes no parameters and returns every subscription and region in one call, with Headroom and PercentUsed already computed.
+    - `quota-compute-usage` (Kusto, preferred): Takes no parameters and returns raw compute quota currentValue and limit for every subscription and region. It does not compute a percentage; use `quota-headroom` for PercentUsed.
+    - `vm-quota-usage`: Python fallback for a live spot-check. Run with `subscription_id` and optional `location` to retrieve VM family current usage, limits, and utilization percentages.
 
 
     ## 1. Establish scope
@@ -47,7 +49,7 @@ spec:
     ## 2. Collect quota utilization
 
 
-    For each active subscription and region, ask `azure-capacity-manager` to run `vm-quota-usage` with `subscription_id`, `location`. Capture VM family current usage, limit, utilization percentage, warning status, and critical status.
+    Ask `azure-capacity-manager` to run `quota-headroom`, which returns every active subscription and region in a single call. Capture VM family current usage, limit, and PercentUsed, then derive warning and critical status by comparing PercentUsed against the thresholds defined below. For a live spot-check of a specific subscription and region, run `vm-quota-usage` with `subscription_id`, `location`.
 
 
     ## 3. Compare to prior week

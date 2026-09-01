@@ -31,11 +31,13 @@ spec:
 
     ## Specialist tools to request from `azure-capacity-manager`
 
-    Ask `azure-capacity-manager` to use the following Python tools instead of `az` CLI commands when available. Specialist tools use their configured authentication and the agent system-managed identity where required.
+    Ask `azure-capacity-manager` to use the following tools instead of `az` CLI commands when available. Specialist tools use their configured authentication and the agent system-managed identity where required.
 
     - `azure-capacity-manager`: Run `benefit-recommendations` with billing_scope and lookback to get reservation and savings plan recommendations
     - `ftk-hubs-agent`: Run `resource-graph-query` with query and subscriptions to execute Azure Resource Graph KQL
-    - `vm-quota-usage`: Run with subscription_id and location to get VM family quota usage with at-risk thresholds
+    - `quota-headroom` (Kusto, preferred): Takes no parameters and returns every subscription and region in one call, with Headroom and PercentUsed already computed
+    - `quota-compute-usage` (Kusto, preferred): Takes no parameters and returns raw compute quota currentValue and limit for every subscription and region
+    - `vm-quota-usage`: Python fallback for a live spot-check. Run with subscription_id and location to get VM family quota usage with at-risk thresholds
     - `ftk-database-query`: Run `commitment-utilization-score`, `commitment-discount-waste`, `compute-spend-commitment-coverage`, and `compute-cost-per-core` for quarterly Rate Optimization KPI evidence
 
 
@@ -81,7 +83,7 @@ spec:
     ## 3. Architecture Review
 
 
-    Ask `ftk-hubs-agent` to run `resource-graph-query` for resource inventory, and ask `azure-capacity-manager` to use `vm-quota-usage` for multi-subscription quota distribution:
+    Ask `ftk-hubs-agent` to run `resource-graph-query` for resource inventory, and ask `azure-capacity-manager` to use `quota-headroom`, which returns all subscriptions in one call, for multi-subscription quota distribution (use `vm-quota-usage` for a live spot-check):
 
     - Stamp-based isolation health — any stamps at capacity?
 

@@ -31,14 +31,20 @@ spec:
 
     ## Specialist tools to request from `azure-capacity-manager`
 
-    Ask `azure-capacity-manager` to use the following Python tools instead of `az` CLI commands when available. Specialist tools use their configured authentication and the agent system-managed identity where required.
+    Ask `azure-capacity-manager` to use the following tools instead of `az` CLI commands when available. Specialist tools use their configured authentication and the agent system-managed identity where required.
 
-    - `vm-quota-usage`: Run with subscription_id and location to get VM family quota usage with at-risk thresholds
-    - `non-compute-quotas`: Run with subscription_id and location to get Storage and Network quota usage
-    - `capacity-reservation-groups`: Run with subscription_id and resource_group when scoped to list CRGs with instanceView utilization
+    - `quota-headroom` (Kusto, preferred): Takes no parameters and returns every subscription and region in one call, with Headroom and PercentUsed already computed
+    - `quota-compute-usage` (Kusto, preferred): Takes no parameters and returns raw compute quota currentValue and limit for every subscription and region
+    - `vm-quota-usage`: Python fallback for a live spot-check. Run with subscription_id and location to get VM family quota usage with at-risk thresholds
+    - `quota-storage-usage` and `quota-network-usage` (Kusto, preferred): Take no parameters and return Storage and Network quota usage for every subscription and region
+    - `non-compute-quotas`: Python fallback for a live spot-check. Run with subscription_id and location to get Storage and Network quota usage
+    - `quota-capacity-reservations` (Kusto, preferred): Takes no parameters and returns CRG inventory for every subscription. Inventory only, so currentValue, limit, and unit may be empty
+    - `capacity-reservation-groups`: Python fallback when instanceView utilization is needed. Run with subscription_id and resource_group when scoped to list CRGs with instanceView utilization
 
-    - `zone-mapping`: Run with reference_subscription_id, location, and peer_subscription_ids before cross-subscription zonal placement or shared-CRG decisions
-    - `sku-availability`: Ask `azure-capacity-manager` to run with subscription_id and location to get Compute SKU availability and restrictions by default. Use `resource_provider: kusto` with a planned Data Explorer SKU in `sku_filter` to preflight Azure Data Explorer / Kusto eligibility for FinOps Hub analytics deployments; never infer Kusto availability from Compute SKU results.
+    - `quota-availability-zone-mappings` (Kusto, preferred): Takes no parameters and returns subscription-specific logical-to-physical zone mappings for every subscription and region
+    - `zone-mapping`: Python fallback for a live spot-check. Run with reference_subscription_id, location, and peer_subscription_ids before cross-subscription zonal placement or shared-CRG decisions
+    - `quota-compute-resource-skus` (Kusto, preferred for Compute): Takes no parameters and returns VM SKU family, zone, and restriction evidence for every subscription and region
+    - `sku-availability`: Ask `azure-capacity-manager` to run with subscription_id and location to get Compute SKU availability and restrictions by default. Use `resource_provider: kusto` with a planned Data Explorer SKU in `sku_filter` to preflight Azure Data Explorer / Kusto eligibility for FinOps Hub analytics deployments; never infer Kusto availability from Compute SKU results. The `kusto` mode has no Kusto-tool equivalent and stays on this tool.
     - `azure-capacity-manager`: Run `benefit-recommendations` with billing_scope and lookback to get reservation and savings plan recommendations
     - `ftk-database-query`: Run `commitment-utilization-score`, `commitment-discount-waste`, `compute-spend-commitment-coverage`, and `compute-cost-per-core` when Kusto cost evidence is available
 
@@ -46,7 +52,7 @@ spec:
     ## 1. Quota Headroom Analysis
 
 
-    Ask `azure-capacity-manager` to run comprehensive quota analysis across all subscriptions using `vm-quota-usage` and `non-compute-quotas`:
+    Ask `azure-capacity-manager` to run comprehensive quota analysis across all subscriptions using `quota-headroom`, `quota-storage-usage`, and `quota-network-usage`, each of which covers the whole estate in a single call (use `vm-quota-usage` and `non-compute-quotas` for a live spot-check):
 
     - Aggregate quota usage by VM family across subscriptions
 
@@ -66,7 +72,7 @@ spec:
     ## 2. CRG Cost-Waste Audit
 
 
-    Ask `azure-capacity-manager` to use `capacity-reservation-groups` for all capacity reservations:
+    Ask `azure-capacity-manager` to use `quota-capacity-reservations` to enumerate all capacity reservation groups, then `capacity-reservation-groups` for the instanceView utilization the calculations below need:
 
     - Calculate weekly cost of unused reserved capacity (reserved minus allocated × pay-as-you-go rate)
 
@@ -87,7 +93,7 @@ spec:
     ## 3. SKU and Zone Availability Validation
 
 
-    Ask `azure-capacity-manager` to use `sku-availability` to validate SKU and zone availability for shared CRGs and upcoming deployments:
+    Ask `azure-capacity-manager` to use `quota-compute-resource-skus` to validate SKU and zone availability for shared CRGs and upcoming deployments, falling back to `sku-availability` for a live spot-check:
 
     - Verify that planned SKUs are available in the required locations and zones
 
@@ -95,7 +101,7 @@ spec:
 
     - Require a structured fallback SKU, zone, or region with compatibility and deployment-test status for critical workloads
 
-    - Use `zone-mapping` for every cross-subscription zonal or shared-CRG scenario. If mappings are unavailable or stale, report INSUFFICIENT EVIDENCE and do not approve placement.
+    - Use `quota-availability-zone-mappings`, or `zone-mapping` for a live spot-check, for every cross-subscription zonal or shared-CRG scenario. If mappings are unavailable or stale, report INSUFFICIENT EVIDENCE and do not approve placement.
 
     - For FinOps Hub Data Explorer backend work, ask `azure-capacity-manager` to run `sku-availability` with `resource_provider: kusto` and the planned ADX SKU as `sku_filter`; treat `is_available: false` as a deploy or upgrade blocker.
 
@@ -115,7 +121,7 @@ spec:
     ## 5. Region and SKU Availability
 
 
-    Ask `azure-capacity-manager` to use `sku-availability` to check for any new region access or zonal enablement needs:
+    Ask `azure-capacity-manager` to use `quota-compute-resource-skus`, or `sku-availability` for a live spot-check, to check for any new region access or zonal enablement needs:
 
     - Upcoming deployments that need new regions?
 

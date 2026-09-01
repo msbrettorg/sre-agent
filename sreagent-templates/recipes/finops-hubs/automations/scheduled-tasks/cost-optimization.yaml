@@ -163,7 +163,7 @@ spec:
 
     ### 3c: Categorize by effort and risk
 
-    Before categorizing, ask `azure-capacity-manager` to use `non-compute-quotas` to identify Storage and Network quota pressure that may affect optimization feasibility.
+    Before categorizing, ask `azure-capacity-manager` to use `quota-storage-usage` and `quota-network-usage`, which cover every subscription and region in one call, to identify Storage and Network quota pressure that may affect optimization feasibility. Use `non-compute-quotas` for a live spot-check.
 
 
     Organize all findings into four categories:

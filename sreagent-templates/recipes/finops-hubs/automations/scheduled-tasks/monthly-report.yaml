@@ -32,7 +32,7 @@ spec:
     Lead the workflow as the FinOps practitioner. Do not run Kusto tools directly. Ask `ftk-database-query` to collect FinOps Hub Kusto evidence and ask `azure-capacity-manager` to collect quota and capacity evidence.
 
     - `ftk-hubs-agent`: Run `data-freshness-check` with cluster_uri and database to check Hub data staleness
-    - `azure-capacity-manager`: Run `vm-quota-usage` with subscription_id and location to get VM family quota usage with at-risk thresholds
+    - `azure-capacity-manager`: Run `quota-headroom` (Kusto, preferred) for VM family quota usage. It takes no parameters and returns every subscription and region in one call, with Headroom and PercentUsed already computed. Run `vm-quota-usage` with subscription_id and location as the Python fallback for a live spot-check.
 
 
     ## Phase 1: Data Collection
@@ -98,7 +98,7 @@ spec:
 
     Ask `ftk-database-query` to run `top-resource-types-by-cost` with N=20. Identify legacy or inefficient resource types.
 
-    Ask `azure-capacity-manager` to run `vm-quota-usage` for subscriptions and locations with significant compute cost to identify VM family quota risks that could affect optimization or forecast assumptions.
+    Ask `azure-capacity-manager` to run `quota-headroom`, which returns all subscriptions and locations in one call, and focus on those with significant compute cost to identify VM family quota risks that could affect optimization or forecast assumptions. Use `vm-quota-usage` for a live spot-check.
 
 
     ### 1.12 Tag Coverage

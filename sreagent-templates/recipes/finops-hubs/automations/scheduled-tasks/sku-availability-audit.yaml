@@ -30,10 +30,11 @@ spec:
     ## Specialist tools to request from `azure-capacity-manager`
 
 
-    Ask `azure-capacity-manager` to use Python tools with DefaultAzureCredential and the agent system-managed identity.
+    Ask `azure-capacity-manager` to use tools with DefaultAzureCredential and the agent system-managed identity.
 
 
-    - `sku-availability`: Ask `azure-capacity-manager` to run with `subscription_id`, `location`, optional `sku_filter`, optional `resource_provider`. Use the default `resource_provider: compute` to list Compute SKU availability, zones, and restrictions. Use `resource_provider: kusto` for Azure Data Explorer / Kusto SKU eligibility checks before FinOps Hub analytics backend deployments or upgrades.
+    - `quota-compute-resource-skus` (Kusto, preferred for Compute): Takes no parameters and returns VM SKU family, availability zone, and restriction evidence for every subscription and region in one call.
+    - `sku-availability`: Ask `azure-capacity-manager` to run with `subscription_id`, `location`, optional `sku_filter`, optional `resource_provider`. Use the default `resource_provider: compute` for a live spot-check of Compute SKU availability, zones, and restrictions. Use `resource_provider: kusto` for Azure Data Explorer / Kusto SKU eligibility checks before FinOps Hub analytics backend deployments or upgrades; that mode has no Kusto-tool equivalent and stays on this tool.
 
 
     ## 1. Establish region and SKU scope
@@ -45,10 +46,10 @@ spec:
     ## 2. Collect SKU availability
 
 
-    Ask `azure-capacity-manager` to run `sku-availability` for each scoped subscription and region using `subscription_id`, `location`, optional `sku_filter`, `resource_provider`.
+    Ask `azure-capacity-manager` to run `quota-compute-resource-skus` for the Compute portion, which returns all scoped subscriptions and regions in one call. Ask `azure-capacity-manager` to run `sku-availability` for each scoped subscription and region using `subscription_id`, `location`, optional `sku_filter`, `resource_provider` for a live Compute spot-check and for all Azure Data Explorer / Kusto checks.
 
 
-    - For Compute, use `resource_provider: compute` or omit it to preserve the default behavior. Capture total SKUs, restricted SKUs, restriction reason codes, zone availability, and restriction values.
+    - For Compute, prefer `quota-compute-resource-skus`, or run `sku-availability` with `resource_provider: compute` or omit it to preserve the default behavior. Capture total SKUs, restricted SKUs, restriction reason codes, zone availability, and restriction values.
 
     - For Azure Data Explorer / Kusto, use `resource_provider: kusto`. Capture `source_endpoint`, returned SKUs, `requested_sku`, `is_available`, and any guidance. ADX Kusto SKU eligibility must use the Microsoft.Kusto regional SKU API and must not be inferred from Microsoft.Compute SKU results.
 

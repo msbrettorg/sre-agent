@@ -33,7 +33,7 @@ spec:
     Do not run Kusto tools directly. Ask `ftk-database-query` to run AI cost and token tools, and ask `azure-capacity-manager` to run GPU and regional capacity checks. Ask `ftk-hubs-agent` to run `resource-graph-query` only for Azure resource inventory and governance context.
 
     - `ftk-hubs-agent`: Run `resource-graph-query` with query and subscriptions to execute Azure Resource Graph KQL for AI resource discovery
-    - `azure-capacity-manager`: Run `vm-quota-usage` with subscription_id and location to get VM family quota usage with at-risk thresholds for GPU capacity
+    - `azure-capacity-manager`: Run `quota-headroom` (Kusto, preferred) for GPU-capable VM family quota headroom. It takes no parameters and returns every subscription and region in one call, with Headroom and PercentUsed already computed. Run `vm-quota-usage` with subscription_id and location as the Python fallback for a live spot-check.
     - `ftk-database-query`: Run `ai-token-usage-breakdown`, `ai-daily-trend`, and `ai-model-cost-comparison` as the FinOps KPI-backed token consumption evidence set
 
 
@@ -155,7 +155,7 @@ spec:
 
     Check if Azure OpenAI Provisioned Throughput Units (PTUs) would be cheaper than pay-as-you-go for high-volume workloads.
 
-    Ask `azure-capacity-manager` to run `vm-quota-usage` in GPU-capable regions to identify GPU quota constraints for AI workloads that rely on VM-hosted inference or training.
+    Ask `azure-capacity-manager` to run `quota-headroom`, which covers all regions in one call, and filter to GPU-capable regions to identify GPU quota constraints for AI workloads that rely on VM-hosted inference or training. Use `vm-quota-usage` for a live spot-check of a specific region.
 
 
     ## Phase 4: Report

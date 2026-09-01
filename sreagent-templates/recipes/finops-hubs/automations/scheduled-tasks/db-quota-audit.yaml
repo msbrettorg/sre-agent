@@ -25,9 +25,10 @@ spec:
 
     ## Specialist tools to request from `azure-capacity-manager`
 
-    Ask `azure-capacity-manager` to use Python tools with DefaultAzureCredential and the agent system-managed identity.
+    Ask `azure-capacity-manager` to use tools with DefaultAzureCredential and the agent system-managed identity.
 
-    - `db-service-quotas`: Run with `subscription_id`, optional `location`, optional `services`, optional `include_capabilities` to retrieve SQL DB, SQL MI, Cosmos DB, PostgreSQL Flex, and MySQL Flex quotas plus region/AZ access status.
+    - `quota-sql-subscription-usage` (Kusto, preferred for Azure SQL DB): Takes no parameters and returns Azure SQL quota usage for every subscription and region in one call. It covers only the Azure SQL DB portion of this audit and does not report region or AZ access status.
+    - `db-service-quotas`: Run with `subscription_id`, optional `location`, optional `services`, optional `include_capabilities` to retrieve SQL DB, SQL MI, Cosmos DB, PostgreSQL Flex, and MySQL Flex quotas plus region/AZ access status. SQL MI, Cosmos DB, PostgreSQL Flex, MySQL Flex, and all region/AZ access status have no Kusto equivalent and stay on this tool.
 
     ## 1. Establish subscription scope
 
@@ -35,7 +36,7 @@ spec:
 
     ## 2. Collect database quota and access usage
 
-    For each active subscription, ask `azure-capacity-manager` to run `db-service-quotas` with `subscription_id`, optional `location`. Use the tool's normalized `quotas` and `region_access` arrays for tables and charts. Capture service name, scope, metric, current value, limit, available capacity, utilization percentage, unit, location, at-risk flags, source endpoint, access status, and any suppressed or unsuppressed errors.
+    Ask `azure-capacity-manager` to run `quota-sql-subscription-usage` for the Azure SQL DB portion, which returns all subscriptions and regions in one call. For each active subscription, ask `azure-capacity-manager` to run `db-service-quotas` with `subscription_id`, optional `location` to cover SQL MI, Cosmos DB, PostgreSQL Flex, MySQL Flex, and region/AZ access status, and for a live spot-check of SQL DB. Use the tool's normalized `quotas` and `region_access` arrays for tables and charts. Capture service name, scope, metric, current value, limit, available capacity, utilization percentage, unit, location, at-risk flags, source endpoint, access status, and any suppressed or unsuppressed errors.
 
     ## 3. Separate API-reported and default soft limits
 

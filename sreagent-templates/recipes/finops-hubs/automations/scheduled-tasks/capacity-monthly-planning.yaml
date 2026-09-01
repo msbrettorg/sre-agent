@@ -31,10 +31,13 @@ spec:
 
     ## Specialist tools to request from `azure-capacity-manager`
 
-    Ask `azure-capacity-manager` to use the following Python tools instead of `az` CLI commands when available. Specialist tools use their configured authentication and the agent system-managed identity where required.
+    Ask `azure-capacity-manager` to use the following tools instead of `az` CLI commands when available. Specialist tools use their configured authentication and the agent system-managed identity where required.
 
-    - `vm-quota-usage`: Run with subscription_id and location to get VM family quota usage with at-risk thresholds
-    - `capacity-reservation-groups`: Run with subscription_id and resource_group when scoped to list CRGs with instanceView utilization
+    - `quota-headroom` (Kusto, preferred): Takes no parameters and returns every subscription and region in one call, with Headroom and PercentUsed already computed
+    - `quota-compute-usage` (Kusto, preferred): Takes no parameters and returns raw compute quota currentValue and limit for every subscription and region
+    - `vm-quota-usage`: Python fallback for a live spot-check. Run with subscription_id and location to get VM family quota usage with at-risk thresholds
+    - `quota-capacity-reservations` (Kusto, preferred): Takes no parameters and returns CRG inventory for every subscription. Inventory only, so currentValue, limit, and unit may be empty
+    - `capacity-reservation-groups`: Python fallback when instanceView utilization is needed. Run with subscription_id and resource_group when scoped to list CRGs with instanceView utilization
     - `azure-capacity-manager`: Run `benefit-recommendations` with billing_scope and lookback to get reservation and savings plan recommendations
     - `ftk-hubs-agent`: Run `resource-graph-query` with query and subscriptions to execute Azure Resource Graph KQL
     - `ftk-database-query`: Run `compute-spend-commitment-coverage`, `compute-cost-per-core`, `commitment-utilization-score`, and `commitment-discount-waste` for capacity-related Rate Optimization KPI evidence
@@ -68,7 +71,7 @@ spec:
     ## 2. Capacity Request Pipeline
 
 
-    Based on the demand forecast, use `vm-quota-usage` and build a capacity request pipeline:
+    Based on the demand forecast, use `quota-headroom`, or `vm-quota-usage` for a live spot-check, and build a capacity request pipeline:
 
     - Quota increases needed (by subscription, region, family)
 
@@ -88,7 +91,7 @@ spec:
     ## 3. Allocation Review
 
 
-    Ask `azure-capacity-manager` to use `capacity-reservation-groups` to review current CRG portfolio:
+    Ask `azure-capacity-manager` to use `quota-capacity-reservations` to enumerate the current CRG portfolio, then `capacity-reservation-groups` for the instanceView utilization the review below needs:
 
     - Utilization trends over the past month (from daily checks)
 

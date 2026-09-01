@@ -17,7 +17,7 @@ spec:
 
     - Use assigned Python capacity tools, knowledge files, and uploaded references to inspect current state, compare scenarios, and recommend next actions.
 
-    - Do not call Kusto, Azure Resource Graph, Azure CLI, deployment, data freshness, or `Task`. Use Teams, Outlook, and visualization tools only when the practitioner asks you to render or deliver the final evidence package. If Kusto-backed cost evidence is needed, return a precise evidence request for the practitioner to send to `ftk-database-query`. If Resource Graph, Hub health, or infrastructure remediation evidence is needed, return a precise evidence request for the practitioner to send to `ftk-hubs-agent`.
+    - Do not call Azure Resource Graph, Azure CLI, deployment, data freshness, or `Task`. Use Teams, Outlook, and visualization tools only when the practitioner asks you to render or deliver the final evidence package. If Resource Graph, Hub health, or infrastructure remediation evidence is needed, return a precise evidence request for the practitioner to send to `ftk-hubs-agent`.
 
 
     Grounding rules:
@@ -52,6 +52,27 @@ spec:
     - Do not prescribe fixed region counts or availability percentages. Base region and zone placement on workload criticality, recovery objectives, dependencies, latency, data residency, tested failover behavior, and cost.
 
     - Service Health is supporting evidence, not proof that a specific allocation will succeed or that every capacity issue has a published alternative or resolution time.
+
+
+    Kusto quota tools (prefer over the matching Python tool below for routine, scheduled, or fleet-wide checks - cached and scales past 5,000 subscriptions; use the Python tool for a live spot-check):
+
+    - `quota-compute-usage` and `quota-headroom` instead of `vm-quota-usage`.
+
+    - `quota-storage-usage`, `quota-network-usage`, `quota-app-service-usage`, `quota-cognitive-services-usage`, `quota-hdinsight-usage`, `quota-machine-learning-usage`, and `quota-purview-usage` instead of `non-compute-quotas`.
+
+    - `quota-premium-ssd-v2-disks` is Premium SSD v2 disk inventory, not service quota usage: currentValue holds disk size in GiB and limit may be empty, so do not compute a utilization percentage from it.
+
+    - `quota-sql-subscription-usage` instead of the SQL DB portion of `db-service-quotas` (SQL MI, Cosmos DB, PostgreSQL Flex, and MySQL Flex quota stay on `db-service-quotas` - no Kusto equivalent yet).
+
+    - `quota-capacity-reservations` for fleet-wide CRG inventory. It is inventory only, so currentValue, limit, and unit may be empty; `capacity-reservation-groups` is still required when instanceView utilization is needed.
+
+    - `quota-availability-zone-mappings` instead of `zone-mapping`.
+
+    - `quota-compute-resource-skus` instead of the Microsoft.Compute mode of `sku-availability` (the `kusto` mode of `sku-availability` has no Kusto equivalent yet).
+
+    - `quota-current-usage` for a single cross-service snapshot spanning multiple quota categories.
+
+    - No Kusto equivalent for `benefit-recommendations` savings-plan and reservation-benefit work.
 
 
     Python tool inventory:
@@ -103,6 +124,21 @@ spec:
   - db-service-quotas
   - capacity-reservation-groups
   - zone-mapping
+  - quota-compute-usage
+  - quota-headroom
+  - quota-storage-usage
+  - quota-network-usage
+  - quota-app-service-usage
+  - quota-cognitive-services-usage
+  - quota-hdinsight-usage
+  - quota-machine-learning-usage
+  - quota-purview-usage
+  - quota-premium-ssd-v2-disks
+  - quota-sql-subscription-usage
+  - quota-capacity-reservations
+  - quota-availability-zone-mappings
+  - quota-compute-resource-skus
+  - quota-current-usage
   - PostMessageToConversation
   - PostCardToConversation
   - SendOutlookEmail

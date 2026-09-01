@@ -30,10 +30,12 @@ spec:
     ## Specialist tools to request from `azure-capacity-manager`
 
 
-    Ask `azure-capacity-manager` to use Python tools with DefaultAzureCredential and the agent system-managed identity.
+    Ask `azure-capacity-manager` to use tools with DefaultAzureCredential and the agent system-managed identity.
 
 
-    - `non-compute-quotas`: Run with `subscription_id`, optional `location` to retrieve storage, network, and estimated non-compute service quota utilization.
+    - `quota-storage-usage`, `quota-network-usage`, `quota-app-service-usage`, `quota-cognitive-services-usage`, `quota-hdinsight-usage`, `quota-machine-learning-usage`, and `quota-purview-usage` (Kusto, preferred): Each takes no parameters and returns its service quota usage for every subscription and region in one call. `quota-current-usage` returns a single cross-service snapshot spanning these categories.
+    - `quota-premium-ssd-v2-disks` (Kusto): Takes no parameters and returns Premium SSD v2 disk inventory, not service quota usage. `currentValue` holds disk size in GiB and `limit` may be empty, so do not compute a utilization percentage from it.
+    - `non-compute-quotas`: Python fallback for a live spot-check, and for any non-compute service the Kusto tools above do not cover. Run with `subscription_id`, optional `location` to retrieve storage, network, and estimated non-compute service quota utilization.
 
 
     ## 1. Establish subscription scope
@@ -45,7 +47,7 @@ spec:
     ## 2. Collect quota usage
 
 
-    For each active subscription, ask `azure-capacity-manager` to run `non-compute-quotas` with `subscription_id`, optional `location`. Use the tool''s normalized `quotas` array for tables and charts. If only legacy `services` records are available, normalize them with safe accessors before reporting: accept `service_name` or `service`, `quota_name` or `name`, `current_count` or `currentValue` or `current`, and default missing `location` to `subscription`. Capture service name, quota name, current count, limit, utilization percentage, count source, limit source, limit type, and any errors.
+    Ask `azure-capacity-manager` to run the `quota-*` Kusto tools listed above, which return all active subscriptions and regions in one call each. For a live spot-check, or for a service those tools do not cover, ask `azure-capacity-manager` to run `non-compute-quotas` with `subscription_id`, optional `location`. Use the tool''s normalized `quotas` array for tables and charts. If only legacy `services` records are available, normalize them with safe accessors before reporting: accept `service_name` or `service`, `quota_name` or `name`, `current_count` or `currentValue` or `current`, and default missing `location` to `subscription`. Capture service name, quota name, current count, limit, utilization percentage, count source, limit source, limit type, and any errors.
 
 
     ## 3. Separate reported and estimated limits
