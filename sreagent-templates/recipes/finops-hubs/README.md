@@ -104,10 +104,11 @@ if ARM deployment succeeded.
 
 The call order is ARM deployment, extras application, connector health, and
 verification. A token failure in verification doesn't roll back existing
-resources. However, extras probes the same audience earlier: if the token was
-unavailable then, it skips data-plane-only items, including skills, subagents,
-tools, plugins, and knowledge items. Healthy ARM connectors can coexist with
-an incomplete agent. Review the extras warnings, not just the final error.
+resources. Extras probes the same audience earlier. If the token is unavailable,
+it reports the native Az PowerShell diagnostic and fails when configured
+data-plane assets cannot be applied, including skills, subagents, tools, plugins,
+and knowledge items. Healthy ARM connectors can coexist with an incomplete agent.
+Neither extras nor verification changes the caller's authentication or context.
 
 Run verification from an approved caller session that already has the intended
 Az context and data-plane authorization. The scripts don't change that context:

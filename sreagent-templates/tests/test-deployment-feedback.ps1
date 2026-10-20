@@ -1,6 +1,6 @@
 param(
     [switch]$Child,
-    [ValidateSet('Ok', 'CachedTenants', 'Http', 'InvalidJson', 'EmptyJson', 'Token')]
+    [ValidateSet('Ok', 'CachedTenants', 'Http', 'InvalidJson', 'EmptyJson', 'Token', 'ExtrasToken')]
     [string]$Scenario = 'Ok'
 )
 
@@ -34,7 +34,9 @@ if ($Child) {
         param($Scope)
         throw 'Scripts must not change context autosave.'
     }
-    function Get-AzAccessToken { }
+    function Get-AzAccessToken {
+        if ($Scenario -eq 'ExtrasToken') { throw 'fixture data-plane token denied' }
+    }
     function New-AzSubscriptionDeployment { }
     function Invoke-AzRestMethod {
         param($Method, $Uri, $DefaultProfile, $ResourceId, $ErrorAction)
@@ -69,7 +71,20 @@ if ($Child) {
         }
         return [pscustomobject]@{ StatusCode = 200; Content = $body }
     }
-    & $verify -ResourceGroup test-rg -AgentName test-agent
+    if ($Scenario -eq 'ExtrasToken') {
+        $extrasFile = Join-Path ([IO.Path]::GetTempPath()) "extras-feedback-$([guid]::NewGuid()).json"
+        try {
+            '{"knowledgeItems":[{"metadata":{"name":"test-knowledge"}}],"plugins":{"marketplaces":[{"name":"test-marketplace"}]}}' |
+                Set-Content $extrasFile
+            & (Join-Path $PSScriptRoot '../bicep/Apply-Extras.ps1') `
+                -ResourceGroup test-rg -AgentName test-agent -ExtrasFile $extrasFile
+            throw 'Extras must fail when configured data-plane assets cannot be applied.'
+        } finally {
+            Remove-Item -LiteralPath $extrasFile -Force
+        }
+    } else {
+        & $verify -ResourceGroup test-rg -AgentName test-agent
+    }
     exit $LASTEXITCODE
 }
 
@@ -79,11 +94,14 @@ $cases = @(
     @{ Name = 'Http'; Exit = 1; Message = 'HTTP 403' },
     @{ Name = 'InvalidJson'; Exit = 1; Message = 'Invalid JSON from data-plane endpoint' },
     @{ Name = 'EmptyJson'; Exit = 1; Message = 'Empty JSON from data-plane endpoint' },
-    @{ Name = 'Token'; Exit = 1; Message = 'Az PowerShell token denied' }
+    @{ Name = 'Token'; Exit = 1; Message = 'Az PowerShell token denied' },
+    @{ Name = 'ExtrasToken'; Exit = 1; Message = 'Data-plane configuration incomplete.'; Detail = 'fixture data-plane token denied' }
 )
 foreach ($case in $cases) {
     $output = (& pwsh -NoProfile -File $PSCommandPath -Child -Scenario $case.Name 2>&1 | Out-String)
-    if ($LASTEXITCODE -ne $case.Exit -or -not $output.Contains($case.Message)) {
+    if ($LASTEXITCODE -ne $case.Exit -or -not $output.Contains($case.Message) -or
+        ($case.ContainsKey('Detail') -and -not $output.Contains($case.Detail)) -or
+        $output.Contains('Collection was of a fixed size')) {
         throw "$($case.Name) regression failed (exit $LASTEXITCODE): $output"
     }
 }
@@ -138,6 +156,11 @@ try {
     $items = @(Collect-Config -Subdir fixture | ConvertFrom-Json)
     if ($items.Count -ne 1 -or $items[0].metadata.name -ne 'fixture') {
         throw 'JSON configuration assets must not be silently omitted.'
+    }
+    Set-Content (Join-Path $fixtureDir 'collection.json') '[{"metadata":{"name":"collection-fixture"}}]'
+    $items = @(Collect-Config -Subdir fixture | ConvertFrom-Json)
+    if ($items.Count -ne 2 -or 'collection-fixture' -notin $items.metadata.name) {
+        throw 'JSON asset collections must retain their existing flat array shape.'
     }
     function Invoke-FailingYamlConverter {
         $global:LASTEXITCODE = 1

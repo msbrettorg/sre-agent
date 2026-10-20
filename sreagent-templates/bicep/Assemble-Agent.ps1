@@ -193,7 +193,7 @@ print(json.dumps(data))
         # Read JSON files (backward compat)
         foreach ($f in (Get-ChildItem $full -File -Filter '*.json' -ErrorAction SilentlyContinue)) {
             try {
-                $items = $items | Invoke-Jq -Compact -Filter '. + [$i[0]]' -ExtraArgs @('--slurpfile', 'i', $f.FullName)
+                $items = $items | Invoke-Jq -Compact -Filter '. + ($i[0] | if type == "array" then . else [.] end)' -ExtraArgs @('--slurpfile', 'i', $f.FullName)
                 if ($LASTEXITCODE -ne 0) { throw 'JSON conversion failed.' }
             } catch {
                 throw "Failed to assemble '$($f.FullName)': $($_.Exception.Message)"

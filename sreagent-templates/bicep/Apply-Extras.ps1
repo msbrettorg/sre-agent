@@ -15,7 +15,7 @@
     Auth:
       ARM calls         → the caller's active Az PowerShell context
       data-plane calls  → Az PowerShell token with audience https://azuresre.dev
-                          Optional — script continues if unavailable
+                          Required for configured data-plane assets
 
     Repo auth (GitHub / ADO):
       GitHub — two paths, the script picks based on what env vars are set:
@@ -126,6 +126,7 @@ if ($AgentUami) {
 
 # ── Probe data-plane token availability ─────────────────────────────────────
 $DpTokenAvailable = $false
+$DpTokenError = ''
 $DpSkippedItems = [System.Collections.Generic.List[string]]::new()
 $GitHubPatInstalled = $false
 
@@ -134,8 +135,8 @@ try {
     $DpTokenAvailable = $true
     Write-Host "Data-plane:     token available"
 } catch {
-    Write-Host "Data-plane:     token unavailable (hooks, repos, httpTriggers will be skipped)"
-    Write-Host "                To apply later: Connect-AzAccount and re-run"
+    $DpTokenError = $_.Exception.Message
+    Write-Warning "Data-plane token acquisition failed: $DpTokenError"
 }
 
 # ── Load extras JSON ────────────────────────────────────────────────────────
@@ -912,7 +913,7 @@ if ($kiCount -gt 0) {
         }
     } else {
         Write-Host "knowledgeItems: $kiCount - skipped (no data-plane token)"
-        $dpSkippedItems += "knowledgeItems ($kiCount files)"
+        $DpSkippedItems.Add("knowledgeItems ($kiCount files)")
     }
 }
 
@@ -1741,21 +1742,7 @@ if ($DpTokenAvailable) {
 # Summary of skipped items (data-plane token unavailable)
 # ═════════════════════════════════════════════════════════════════════════════
 if ($DpSkippedItems.Count -gt 0) {
-    Write-Host ""
-    Write-Host "================================================================"
-    Write-Host "  WARNING: $($DpSkippedItems.Count) item(s) skipped (no data-plane token)"
-    Write-Host "  These require audience https://azuresre.dev which is not"
-    Write-Host "  available in this environment (Cloud Shell MSI)."
-    Write-Host ""
-    Write-Host "  To apply the remaining items:"
-    Write-Host "    1. From a compliant machine: Connect-AzAccount and re-run this script"
-    Write-Host "    2. Or configure in the portal: https://sre.azure.com"
-    Write-Host ""
-    Write-Host "  Skipped:"
-    foreach ($item in $DpSkippedItems) {
-        Write-Host "    - $item"
-    }
-    Write-Host "================================================================"
+    throw "Data-plane configuration incomplete. Token acquisition failed: $DpTokenError`nNot applied: $($DpSkippedItems -join ', ')"
 }
 
 Write-Host ""
