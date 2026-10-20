@@ -101,9 +101,21 @@ echo "  Agent:       $AG"
 echo "  RG:          $RG"
 echo "  Location:    $LOC"
 echo "  Connectors:  $(jq '.connectors | length' "$TFVARS_FILE") custom + toggles"
-echo "  Skills, subagents, tools, prompts: deployed via data-plane (apply-extras.sh)"
+echo "  Skills, subagents, tools, prompts: deployed via data-plane (Apply-Extras.ps1)"
 echo "  Wrote:       ${TFVARS_FILE}"
 echo
+
+# Validate the extras lifecycle before Terraform can change Azure resources.
+if [[ -z "$DESTROY" && -z "$DRY_RUN" ]]; then
+  EXTRAS_BRIDGE="${SCRIPT_DIR}/ps/Invoke-DeploymentExtras.ps1"
+  [[ -f "$EXTRAS_BRIDGE" && -f "$EXTRAS_FILE" ]] || {
+    echo "Error: required extras bridge or assembled extras file is missing; no deployment started." >&2
+    exit 1
+  }
+  jq empty "$EXTRAS_FILE" || { echo "Error: assembled extras JSON is invalid; no deployment started." >&2; exit 1; }
+  command -v pwsh >/dev/null || { echo "Error: pwsh is required to apply extras; no deployment started." >&2; exit 1; }
+  pwsh -NoProfile -File "$EXTRAS_BRIDGE" -Preflight
+fi
 
 # ── Step 3: Terraform init + workspace ──
 # Each agent gets its own state via a TF workspace named after the agent.
@@ -152,23 +164,29 @@ terraform apply -input=false -no-color tf.plan
 rm -f tf.plan
 
 echo
-echo "─────────────── Deployment Succeeded ───────────────"
+echo "─────────────── Infrastructure deployment succeeded ───────────────"
 echo "  Agent (portal):  https://sre.azure.com/#/agent/$(az account show --query id -o tsv)/${RG}/${AG}"
 echo "  Data plane:      https://${AG}.${LOC}.azuresre.ai"
 echo
 
 # ── Step 7: Apply extras (same as Bicep flow) ──
 if [[ -f "$EXTRAS_FILE" ]]; then
-  EXTRAS_SIZE=$(jq 'del(._exported_from) | to_entries | map(select(.value | if type == "array" then length > 0 elif type == "object" then length > 0 else false end)) | length' "$EXTRAS_FILE" 2>/dev/null || echo 0)
+  EXTRAS_SIZE=$(jq 'del(._exported_from) | to_entries | map(select(.value | if type == "array" then length > 0 elif type == "object" then length > 0 else false end)) | length' "$EXTRAS_FILE")
   if [[ "$EXTRAS_SIZE" -gt 0 ]]; then
     SUB=$(az account show --query id -o tsv)
     echo "── Applying data-plane config (extras) ──"
     export INPUT
-    bash "${SCRIPT_DIR}/../bicep/apply-extras.sh" "$SUB" "$RG" "$AG" "$EXTRAS_FILE" ${FORCE:+--force}
+    EXTRAS_ARGS=(-Subscription "$SUB" -ResourceGroup "$RG" -AgentName "$AG" -ExtrasFile "$EXTRAS_FILE")
+    [[ -n "$FORCE" ]] && EXTRAS_ARGS+=(-Force)
+    pwsh -NoProfile -File "$EXTRAS_BRIDGE" "${EXTRAS_ARGS[@]}" || {
+      echo "Infrastructure deployment succeeded, but applying extras failed." >&2
+      exit 1
+    }
   else
     echo "No data-plane extras to apply."
   fi
 fi
 
 rm -rf "$(dirname "$ASSEMBLE_OUT")"
+echo "Deployment complete: infrastructure and extras succeeded."
 echo "─────────────────────────────────────────────────────"

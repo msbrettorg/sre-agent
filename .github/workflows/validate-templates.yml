@@ -94,6 +94,12 @@ jobs:
             echo "⚠ pwsh not available — skipping PS syntax check"
           fi
 
+      - name: Deployment lifecycle regressions
+        run: |
+          command -v pwsh >/dev/null || { echo "::error::PowerShell is required for the deployment lifecycle"; exit 1; }
+          pwsh -NoProfile -File tests/test-deployment-feedback.ps1
+          pwsh -NoProfile -File tests/test-deployment-lifecycle.ps1
+
       # ── 2c. Terraform validate ──
       - name: Terraform validate
         run: |

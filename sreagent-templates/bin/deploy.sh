@@ -11,7 +11,7 @@
 #   ./deploy.sh <parameters-file.json>          # legacy format
 #   ./deploy.sh <config-directory> [deploy-name]
 #
-# After deploy, run apply-extras.sh for data-plane config (repos, hooks, etc.)
+# After ARM deploy, run the canonical PowerShell extras lifecycle.
 
 set -euo pipefail
 
@@ -119,6 +119,7 @@ echo "  Data-plane (apply-extras):"
 EXTRAS_FILE="${FILE%.parameters.json}.extras.json"
 [[ ! -f "$EXTRAS_FILE" ]] && EXTRAS_FILE="$(dirname "$FILE")/assembled.extras.json"
 if [[ -f "$EXTRAS_FILE" ]]; then
+  jq empty "$EXTRAS_FILE" || { echo "Error: assembled extras JSON is invalid; no deployment started." >&2; exit 1; }
   for key in skills subagents tools hooks commonPrompts incidentPlatforms incidentFilters scheduledTasks httpTriggers repos knowledgeItems knowledge pluginConfigs; do
     n=$(jq -r ".${key} // [] | length" "$EXTRAS_FILE" 2>/dev/null)
     if [[ "$n" -gt 0 ]]; then
@@ -141,6 +142,27 @@ if [[ -f "$EXTRAS_FILE" ]]; then
   done
 else
   echo "    (extras file not found — data-plane items shown in change detection below)"
+fi
+
+# Validate the remaining lifecycle before any Azure writes.
+if [[ -z "$DRY_RUN" && -z "$WHAT_IF" ]]; then
+  if [[ -d "$INPUT" && ! -f "$EXTRAS_FILE" ]]; then
+    echo "Error: assembled extras file is missing; no deployment started." >&2
+    exit 1
+  fi
+  if [[ -f "$EXTRAS_FILE" ]]; then
+    EXTRAS_BRIDGE="${SCRIPT_DIR}/ps/Invoke-DeploymentExtras.ps1"
+    [[ -f "$EXTRAS_BRIDGE" ]] || {
+      echo "Error: required extras bridge is missing; no deployment started." >&2
+      exit 1
+    }
+    if [[ -d "$INPUT" && ! -f "${SCRIPT_DIR}/verify-agent.sh" ]]; then
+      echo "Error: required verifier is missing; no deployment started." >&2
+      exit 1
+    fi
+    command -v pwsh >/dev/null || { echo "Error: pwsh is required to apply extras; no deployment started." >&2; exit 1; }
+    pwsh -NoProfile -File "$EXTRAS_BRIDGE" -Preflight
+  fi
 fi
 
 echo
@@ -365,7 +387,7 @@ if [[ "$STATE" != "Succeeded" ]]; then
 fi
 
 echo
-echo -e "${GREEN}${BOLD}─────────────── Deployment Succeeded ───────────────${NC}"
+echo -e "${GREEN}${BOLD}─────────────── ARM deployment succeeded ───────────────${NC}"
 echo -e "  Agent (portal):  ${CYAN}$(jq -r '.properties.outputs.agentPortalUrl.value // empty' "$TMP")${NC}"
 echo -e "  Resource group:  ${CYAN}$(jq -r '.properties.outputs.resourceGroupPortalUrl.value // empty' "$TMP")${NC}"
 echo -e "  Data plane:      ${CYAN}$(jq -r '.properties.outputs.agentDataPlaneUrl.value // empty' "$TMP")${NC}"
@@ -376,19 +398,24 @@ RECIPE_NAME="unknown"
 [[ -d "$INPUT" && -f "${INPUT}/agent.json" ]] && RECIPE_NAME=$(jq -r '._scenario // "custom"' "${INPUT}/agent.json" 2>/dev/null)
 send_telemetry "deploy" "$RECIPE_NAME" "$LOC"
 
-# Auto-run apply-extras.sh if we assembled from a directory and have extras
+# Apply extras using the supported PowerShell lifecycle.
 if [[ -n "${EXTRAS_FILE:-}" && -f "$EXTRAS_FILE" ]]; then
-  EXTRAS_SIZE=$(jq 'del(._exported_from) | to_entries | map(select(.value | if type == "array" then length > 0 elif type == "object" then length > 0 else false end)) | length' "$EXTRAS_FILE" 2>/dev/null || echo 0)
+  EXTRAS_SIZE=$(jq 'del(._exported_from) | to_entries | map(select(.value | if type == "array" then length > 0 elif type == "object" then length > 0 else false end)) | length' "$EXTRAS_FILE")
   if [[ "$EXTRAS_SIZE" -gt 0 ]]; then
     echo "── Applying data-plane config (extras) ──"
     export INPUT
-    bash "${SCRIPT_DIR}/../bicep/apply-extras.sh" "$SUB" "$RG" "$AG" "$EXTRAS_FILE" ${FORCE:+--force}
+    EXTRAS_ARGS=(-Subscription "$SUB" -ResourceGroup "$RG" -AgentName "$AG" -ExtrasFile "$EXTRAS_FILE")
+    [[ -n "$FORCE" ]] && EXTRAS_ARGS+=(-Force)
+    pwsh -NoProfile -File "$EXTRAS_BRIDGE" "${EXTRAS_ARGS[@]}" || {
+      echo "ARM deployment succeeded, but applying extras failed; verification was not run." >&2
+      exit 1
+    }
   else
     echo "No data-plane extras to apply."
   fi
 else
   echo "Next: apply data-plane config (repos, hooks, knowledge, GitHub/ADO auth):"
-  echo "  ./apply-extras.sh $SUB $RG $AG <extras-file>"
+  echo "  pwsh -NoProfile -File ${SCRIPT_DIR}/ps/Invoke-DeploymentExtras.ps1 -Subscription $SUB -ResourceGroup $RG -AgentName $AG -ExtrasFile <extras-file>"
 fi
 echo "─────────────────────────────────────────────────────"
 
@@ -667,4 +694,9 @@ if [[ -d "$INPUT" ]]; then
 fi
 
 rm -f "$TMP"
+if [[ "$VERIFY_RC" -eq 0 && -d "$INPUT" ]]; then
+  echo "Deployment complete: ARM, extras, and verification succeeded."
+elif [[ "$VERIFY_RC" -eq 0 ]]; then
+  echo "ARM deployment complete; apply extras and verify separately if needed."
+fi
 exit "$VERIFY_RC"

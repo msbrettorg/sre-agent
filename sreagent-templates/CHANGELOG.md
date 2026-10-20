@@ -30,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   plugin sources resolve during unattended deployments.
 
 ### Fixed
+- Restored Bash deployment's extras handoff through the supported PowerShell
+  lifecycle, with prerequisite checks before Azure writes and explicit partial
+  deployment failures when required data-plane items are skipped.
+- Restricted native Bicep deployment cleanup to its own two generated files
+  rather than recursively removing the system temporary directory.
 - Streamed Bash assembly JSON rather than passing large payloads as process
   arguments, including inline tool content and resolved skill references.
 - Propagated verification failures through both deploy backends. Data-plane
@@ -56,6 +61,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deployments aren't reported as failed.
 
 ### Testing
+- Added offline PowerShell deployment handoff, failure, preflight, and cleanup
+  regressions and required them in template validation CI.
 - Added focused PowerShell regression checks for native verification failures
   and deployment status propagation.
 - Added focused four-backend dry-run coverage for the `finops-hubs` recipe.

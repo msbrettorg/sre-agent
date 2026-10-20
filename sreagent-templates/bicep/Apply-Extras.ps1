@@ -41,6 +41,9 @@
 .PARAMETER Force
     Force overwrite without prompting.
 
+.PARAMETER RequireComplete
+    Fail when data-plane items were skipped. Used by automatic deployment.
+
 .EXAMPLE
     ./Apply-Extras.ps1 -Subscription <sub-id> -ResourceGroup rg-myagent -AgentName myagent
 #>
@@ -56,7 +59,8 @@ param(
     # will auto-assemble from the directory if ExtrasFile is not found.
     [string]$ExtrasFile = "",
     [string]$ConfigDir  = "",
-    [switch]$Force
+    [switch]$Force,
+    [switch]$RequireComplete
 )
 
 $ErrorActionPreference = 'Stop'
@@ -1761,6 +1765,9 @@ if ($DpSkippedItems.Count -gt 0) {
         Write-Host "    - $item"
     }
     Write-Host "================================================================"
+    if ($RequireComplete) {
+        throw "Deployment incomplete: $($DpSkippedItems.Count) data-plane item(s) were skipped."
+    }
 }
 
 Write-Host ""
