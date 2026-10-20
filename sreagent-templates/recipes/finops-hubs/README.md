@@ -35,17 +35,6 @@ Deploy the generated configuration:
 ./bin/ps/Deploy-Agent.ps1 -InputPath agents/finops-hubs/
 ```
 
-For Bash Cloud Shell, keep the same generated config directory and use
-`./bin/deploy.sh agents/finops-hubs/`. The Bash deployer requires PowerShell 7
-and the Az PowerShell modules to run the checked-in `bicep/Apply-Extras.ps1`
-after ARM deployment. It preserves normal PowerShell startup, including the
-built-in Cloud Shell profile, rather than suppressing it with `-NoProfile`.
-Before changing Azure resources, it validates the native Az context for the
-subscription reported by the calling Azure CLI. This check doesn't select a
-context, change context autosave, or sign you in. The deployer doesn't switch
-your subscription; select the intended subscription yourself. If extras or
-verification fails, the command returns nonzero even when ARM reports success.
-
 Review `agent.json` and `expected-config.json` before deployment. In particular,
 the verification spec's `agent.defaultModelProvider` must match the provider
 you selected; the checked-in spec currently expects `MicrosoftFoundry`.
@@ -70,7 +59,7 @@ refer to an unmodified recipe; exported or customized configurations can differ.
     ✓ Scheduled tasks: 19
     ✓ Knowledge files: 15
 
-─────────────── ARM deployment succeeded ───────────────
+─────────────── Deployment Succeeded ───────────────
 ── Applying data-plane config (extras) ──
 Data-plane:     token available
 ...
@@ -87,7 +76,7 @@ Interpret each stage separately:
 | Output | Meaning |
 |---|---|
 | Pre-deployment `✓` entries | Included in the assembled input, **not yet deployed**. Categories with zero items aren't printed. |
-| `ARM deployment succeeded` | ARM infrastructure completed. Extras, plugin installs, authorization, and verification still follow. |
+| `Deployment Succeeded` | ARM infrastructure completed. Extras, plugin installs, authorization, and verification still follow. |
 | Extras `ok` or an explicit success message | That configuration operation completed. Check each category, including the two plugin installations and Microsoft Teams ConnectorV2, which aren't listed in the preflight summary. |
 | Connector `Succeeded` | ARM reports the connector provisioned. This doesn't prove a query works, the caller can obtain a data-plane token, or Teams is authorized. |
 | `WARNING`, `skipped`, `FAILED`, or `❌ FAIL` | Read the affected item and error. Don't treat it as a complete recipe deployment. |
@@ -99,8 +88,7 @@ the final ARM connector count beyond the three explicitly configured connectors.
 Inspect the extras output and the portal for assets not covered by verification.
 Deployment logs are written to `agents/finops-hubs/deploy-<timestamp>.log`;
 save the complete terminal output as well because that log doesn't include every
-extras operation. `Deployment complete` is printed only after the required
-stages succeed; it doesn't imply that optional OAuth authorization is complete.
+extras operation.
 
 ### Cloud Shell data-plane token failure
 
@@ -108,10 +96,8 @@ An Azure SRE data-plane token failure means Az PowerShell couldn't obtain a toke
 for the **deploying user's session**, with audience `https://azuresre.dev`.
 It isn't a test of the connectors' managed identities. The verifier now prints
 the Az PowerShell diagnostic instead of hiding it and returns a nonzero exit code.
-Both deploy entrypoints return nonzero if extras or post-deployment verification
-fails, even if ARM deployment succeeded. Skipped data-plane items make an
-automatic deployment incomplete; standalone `Apply-Extras.ps1` still reports
-skipped optional items without requiring completion.
+`Deploy-Agent.ps1` also returns nonzero when post-deployment verification fails, even
+if ARM deployment succeeded.
 
 The call order is ARM deployment, extras application, connector health, and
 verification. A token failure in verification doesn't roll back existing
@@ -120,8 +106,8 @@ unavailable then, it skips data-plane-only items, including skills, subagents,
 tools, plugins, and knowledge items. Healthy ARM connectors can coexist with
 an incomplete agent. Review the extras warnings, not just the final error.
 
-From an approved interactive PowerShell environment, authenticate for that
-audience and select the intended subscription:
+From an approved interactive environment, authenticate for that audience and
+select the intended subscription:
 
 ```powershell
 $subscription = '<subscription-id>'

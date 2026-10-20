@@ -1,10 +1,7 @@
 # Shared Az PowerShell authentication and REST helpers.
 
 function Get-RequiredAzContext {
-    param(
-        [Parameter(Mandatory)][string]$SubscriptionId,
-        [switch]$ValidateOnly
-    )
+    param([Parameter(Mandatory)][string]$SubscriptionId)
 
     $contexts = @(
         Get-AzContext -ListAvailable |
@@ -18,8 +15,6 @@ function Get-RequiredAzContext {
     if ($tenantIds.Count -ne 1) {
         throw "Multiple Az PowerShell tenants contain subscription $SubscriptionId. Remove stale contexts or select one explicitly."
     }
-
-    if ($ValidateOnly) { return $contexts[0] }
 
     Disable-AzContextAutosave -Scope Process | Out-Null
     return Set-AzContext -Context $contexts[0] -Scope Process -ErrorAction Stop

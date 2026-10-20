@@ -164,7 +164,7 @@ if ($IsDirectory) {
 
     $ParametersFile = "${AssembleOut}.parameters.json"
     $ExtrasFile = "${AssembleOut}.extras.json"
-    $CleanupFiles += $ParametersFile, $ExtrasFile
+    $CleanupFiles += $ParametersFile, $ExtrasFile, (Split-Path $AssembleTmp -Parent)
 
     # Copy extras.json into InputPath so it survives cleanup and can be re-used
     # (e.g. re-running Apply-Extras standalone without a full re-deploy)
@@ -395,22 +395,6 @@ if ($WhatIf_) {
     }
 }
 
-# Validate the remaining lifecycle before any Azure writes.
-if ($IsDirectory -or ($ExtrasFile -and (Test-Path -LiteralPath $ExtrasFile -PathType Leaf))) {
-    $ApplyExtrasScript = Join-Path $BicepDir 'Apply-Extras.ps1'
-    $requiredFiles = @($ApplyExtrasScript, $ExtrasFile)
-    if ($IsDirectory) { $requiredFiles += (Join-Path $ScriptDir 'Verify-Agent.ps1') }
-    foreach ($required in $requiredFiles) {
-        if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
-            throw "Required deployment lifecycle file not found: $required"
-        }
-    }
-    $null = Get-Content -LiteralPath $ExtrasFile -Raw | ConvertFrom-Json -ErrorAction Stop
-    if (-not (Test-Prerequisites -IncludeTar)) {
-        throw 'PowerShell extras prerequisites are missing; no deployment was started.'
-    }
-}
-
 # ── Pre-deploy: auto-create VNet subnet with delegation if networkConfiguration.type=vnet ──
 if ($IsDirectory) {
     $AgentJsonFile = Join-Path $InputPath 'agent.json'
@@ -528,7 +512,7 @@ if ($State -ne 'Succeeded') {
 }
 
 Write-Host ''
-Write-Header '─────────────── ARM deployment succeeded ───────────────'
+Write-Header '─────────────── Deployment Succeeded ───────────────'
 $portalUrl       = $deployResult.Outputs.agentPortalUrl.Value
 $rgPortalUrl     = $deployResult.Outputs.resourceGroupPortalUrl.Value
 $dataPlaneUrl    = $deployResult.Outputs.agentDataPlaneUrl.Value
@@ -587,7 +571,6 @@ if ($ExtrasFile -and (Test-Path $ExtrasFile -ErrorAction SilentlyContinue)) {
                 ExtrasFile    = $ExtrasFile
             }
             if ($Force) { $applyParams['Force'] = $true }
-            $applyParams['RequireComplete'] = $true
             & $ApplyExtrasScript @applyParams
         } else {
             throw "Apply-Extras.ps1 not found at $ApplyExtrasScript"
@@ -859,12 +842,7 @@ if ($IsDirectory) {
 # ── Cleanup temp files ──
 foreach ($f in $CleanupFiles) {
     if (Test-Path $f -ErrorAction SilentlyContinue) {
-        Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue
+        Remove-Item $f -Recurse -Force -ErrorAction SilentlyContinue
     }
-}
-if ($VerifyExit -eq 0 -and $IsDirectory) {
-    Write-Host 'Deployment complete: ARM, extras, and verification succeeded.'
-} elseif ($VerifyExit -eq 0) {
-    Write-Host 'ARM deployment complete; apply extras and verify separately if needed.'
 }
 exit $VerifyExit
