@@ -164,7 +164,7 @@ if ($IsDirectory) {
 
     $ParametersFile = "${AssembleOut}.parameters.json"
     $ExtrasFile = "${AssembleOut}.extras.json"
-    $CleanupFiles += $ParametersFile, $ExtrasFile, (Split-Path $AssembleTmp -Parent)
+    $CleanupFiles += $ParametersFile, $ExtrasFile
 
     # Copy extras.json into InputPath so it survives cleanup and can be re-used
     # (e.g. re-running Apply-Extras standalone without a full re-deploy)
