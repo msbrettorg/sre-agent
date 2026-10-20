@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   plugin sources resolve during unattended deployments.
 
 ### Fixed
+- Preserved normal PowerShell startup in the Bash deployment bridge so the
+  built-in Cloud Shell profile isn't suppressed. Validate the caller's
+  subscription context before ARM or Terraform writes without selecting a
+  context or changing authentication.
 - Restored Bash deployment's extras handoff through the supported PowerShell
   lifecycle, with prerequisite checks before Azure writes and explicit partial
   deployment failures when required data-plane items are skipped.

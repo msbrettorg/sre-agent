@@ -161,7 +161,7 @@ if [[ -z "$DRY_RUN" && -z "$WHAT_IF" ]]; then
       exit 1
     fi
     command -v pwsh >/dev/null || { echo "Error: pwsh is required to apply extras; no deployment started." >&2; exit 1; }
-    pwsh -NoProfile -File "$EXTRAS_BRIDGE" -Preflight
+    pwsh -NonInteractive -File "$EXTRAS_BRIDGE" -Preflight -Subscription "$SUB"
   fi
 fi
 
@@ -406,7 +406,7 @@ if [[ -n "${EXTRAS_FILE:-}" && -f "$EXTRAS_FILE" ]]; then
     export INPUT
     EXTRAS_ARGS=(-Subscription "$SUB" -ResourceGroup "$RG" -AgentName "$AG" -ExtrasFile "$EXTRAS_FILE")
     [[ -n "$FORCE" ]] && EXTRAS_ARGS+=(-Force)
-    pwsh -NoProfile -File "$EXTRAS_BRIDGE" "${EXTRAS_ARGS[@]}" || {
+    pwsh -NonInteractive -File "$EXTRAS_BRIDGE" "${EXTRAS_ARGS[@]}" || {
       echo "ARM deployment succeeded, but applying extras failed; verification was not run." >&2
       exit 1
     }
@@ -415,7 +415,7 @@ if [[ -n "${EXTRAS_FILE:-}" && -f "$EXTRAS_FILE" ]]; then
   fi
 else
   echo "Next: apply data-plane config (repos, hooks, knowledge, GitHub/ADO auth):"
-  echo "  pwsh -NoProfile -File ${SCRIPT_DIR}/ps/Invoke-DeploymentExtras.ps1 -Subscription $SUB -ResourceGroup $RG -AgentName $AG -ExtrasFile <extras-file>"
+  echo "  pwsh -NonInteractive -File ${SCRIPT_DIR}/ps/Invoke-DeploymentExtras.ps1 -Subscription $SUB -ResourceGroup $RG -AgentName $AG -ExtrasFile <extras-file>"
 fi
 echo "─────────────────────────────────────────────────────"
 

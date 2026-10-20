@@ -107,6 +107,7 @@ echo
 
 # Validate the extras lifecycle before Terraform can change Azure resources.
 if [[ -z "$DESTROY" && -z "$DRY_RUN" ]]; then
+  SUB=$(az account show --query id -o tsv)
   EXTRAS_BRIDGE="${SCRIPT_DIR}/ps/Invoke-DeploymentExtras.ps1"
   [[ -f "$EXTRAS_BRIDGE" && -f "$EXTRAS_FILE" ]] || {
     echo "Error: required extras bridge or assembled extras file is missing; no deployment started." >&2
@@ -114,7 +115,7 @@ if [[ -z "$DESTROY" && -z "$DRY_RUN" ]]; then
   }
   jq empty "$EXTRAS_FILE" || { echo "Error: assembled extras JSON is invalid; no deployment started." >&2; exit 1; }
   command -v pwsh >/dev/null || { echo "Error: pwsh is required to apply extras; no deployment started." >&2; exit 1; }
-  pwsh -NoProfile -File "$EXTRAS_BRIDGE" -Preflight
+  pwsh -NonInteractive -File "$EXTRAS_BRIDGE" -Preflight -Subscription "$SUB"
 fi
 
 # ── Step 3: Terraform init + workspace ──
@@ -173,12 +174,11 @@ echo
 if [[ -f "$EXTRAS_FILE" ]]; then
   EXTRAS_SIZE=$(jq 'del(._exported_from) | to_entries | map(select(.value | if type == "array" then length > 0 elif type == "object" then length > 0 else false end)) | length' "$EXTRAS_FILE")
   if [[ "$EXTRAS_SIZE" -gt 0 ]]; then
-    SUB=$(az account show --query id -o tsv)
     echo "── Applying data-plane config (extras) ──"
     export INPUT
     EXTRAS_ARGS=(-Subscription "$SUB" -ResourceGroup "$RG" -AgentName "$AG" -ExtrasFile "$EXTRAS_FILE")
     [[ -n "$FORCE" ]] && EXTRAS_ARGS+=(-Force)
-    pwsh -NoProfile -File "$EXTRAS_BRIDGE" "${EXTRAS_ARGS[@]}" || {
+    pwsh -NonInteractive -File "$EXTRAS_BRIDGE" "${EXTRAS_ARGS[@]}" || {
       echo "Infrastructure deployment succeeded, but applying extras failed." >&2
       exit 1
     }

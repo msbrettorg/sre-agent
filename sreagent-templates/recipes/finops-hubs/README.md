@@ -38,10 +38,13 @@ Deploy the generated configuration:
 For Bash Cloud Shell, keep the same generated config directory and use
 `./bin/deploy.sh agents/finops-hubs/`. The Bash deployer requires PowerShell 7
 and the Az PowerShell modules to run the checked-in `bicep/Apply-Extras.ps1`
-after ARM deployment. It checks these requirements before changing Azure
-resources. It doesn't switch your subscription or sign you in; select the
-intended subscription yourself. If extras or verification fails, the command
-returns nonzero even when ARM reports success.
+after ARM deployment. It preserves normal PowerShell startup, including the
+built-in Cloud Shell profile, rather than suppressing it with `-NoProfile`.
+Before changing Azure resources, it validates the native Az context for the
+subscription reported by the calling Azure CLI. This check doesn't select a
+context, change context autosave, or sign you in. The deployer doesn't switch
+your subscription; select the intended subscription yourself. If extras or
+verification fails, the command returns nonzero even when ARM reports success.
 
 Review `agent.json` and `expected-config.json` before deployment. In particular,
 the verification spec's `agent.defaultModelProvider` must match the provider

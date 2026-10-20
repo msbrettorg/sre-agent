@@ -11,16 +11,17 @@ if ($deploySource -match '\$CleanupFiles\s*\+=.*Split-Path\s+\$AssembleTmp' -or
     throw 'Unsafe assembler cleanup: expected only the two owned output files.'
 }
 foreach ($source in @($bashDeploy, $terraformDeploy)) {
-    $preflight = $source.IndexOf('pwsh -NoProfile -File "$EXTRAS_BRIDGE" -Preflight')
-    $handoff = $source.IndexOf('pwsh -NoProfile -File "$EXTRAS_BRIDGE" "${EXTRAS_ARGS[@]}"')
+    $preflight = $source.IndexOf('pwsh -NonInteractive -File "$EXTRAS_BRIDGE" -Preflight -Subscription "$SUB"')
+    $handoff = $source.IndexOf('pwsh -NonInteractive -File "$EXTRAS_BRIDGE" "${EXTRAS_ARGS[@]}"')
     if ($preflight -lt 0 -or $handoff -le $preflight -or
+        $source -match 'pwsh -NoProfile -File "\$EXTRAS_BRIDGE"' -or
         $source -match 'bash .*apply-extras\.sh') {
-        throw 'Bash deployment entrypoint must preflight and invoke the native extras bridge.'
+        throw 'Bash deployment must preserve PowerShell startup and preflight the caller subscription.'
     }
 }
-if ($bashDeploy.IndexOf('pwsh -NoProfile -File "$EXTRAS_BRIDGE" -Preflight') -gt
+if ($bashDeploy.IndexOf('pwsh -NonInteractive -File "$EXTRAS_BRIDGE" -Preflight') -gt
     $bashDeploy.IndexOf('az deployment sub create') -or
-    $terraformDeploy.IndexOf('pwsh -NoProfile -File "$EXTRAS_BRIDGE" -Preflight') -gt
+    $terraformDeploy.IndexOf('pwsh -NonInteractive -File "$EXTRAS_BRIDGE" -Preflight') -gt
     $terraformDeploy.IndexOf('terraform apply -input=false')) {
     throw 'The extras preflight must run before infrastructure writes.'
 }
@@ -46,7 +47,9 @@ Add-Content $env:SRE_TEST_EVENTS "EXTRAS force=$Force"
 if ($env:SRE_TEST_SCENARIO -eq 'ExtrasFail') { throw 'Mock extras failure' }
 '@
     Set-Content (Join-Path $psDir 'Az-PowerShell.ps1') @'
-function Get-RequiredAzContext { param($SubscriptionId)
+function Get-RequiredAzContext { param($SubscriptionId, [switch]$ValidateOnly)
+    if ($env:SRE_TEST_SCENARIO -eq 'MissingContext') { throw "No Az PowerShell context found for subscription $SubscriptionId" }
+    if ($ValidateOnly -and $SubscriptionId -ne 'test-sub') { throw 'Incorrect preflight subscription' }
     return [pscustomobject]@{ Subscription = [pscustomobject]@{ Id = $SubscriptionId; Name = 'test' } }
 }
 function Invoke-AzJsonRest { param($Method, $Uri, $DefaultProfile) return $null }
@@ -122,10 +125,17 @@ try {
     $extrasFile = Join-Path $sandbox 'input.extras.json'
     Set-Content $extrasFile '{"skills":[{"name":"mock"}]}'
 
-    $out = (& pwsh -NoProfile -File $invoke -Preflight 2>&1 | Out-String)
+    $out = (& pwsh -NoProfile -File $invoke -Preflight -Subscription test-sub 2>&1 | Out-String)
     if ($LASTEXITCODE -ne 0) { throw "Bridge preflight failed: $out" }
+    $env:SRE_TEST_SCENARIO = 'MissingContext'
+    $out = (& pwsh -NoProfile -File $invoke -Preflight -Subscription test-sub 2>&1 | Out-String)
+    if ($LASTEXITCODE -eq 0 -or $out -notmatch 'No Az PowerShell context found for subscription test-sub' -or
+        (Test-Path $events)) {
+        throw "Missing authentication did not stop preflight before writes: $out"
+    }
+    $env:SRE_TEST_SCENARIO = ''
     $env:SRE_TEST_PREREQS = 'missing'
-    $out = (& pwsh -NoProfile -File $invoke -Preflight 2>&1 | Out-String)
+    $out = (& pwsh -NoProfile -File $invoke -Preflight -Subscription test-sub 2>&1 | Out-String)
     if ($LASTEXITCODE -eq 0 -or $out -notmatch 'prerequisites are missing') {
         throw "Missing prerequisites did not stop bridge: $out"
     }
@@ -174,6 +184,37 @@ try {
     if ($LASTEXITCODE -ne 0 -or -not ((Get-Content $events) -contains 'EXTRAS force=True')) {
         throw "Bridge did not forward -Force and extras arguments: $out"
     }
+
+    . (Join-Path $root 'bin/ps/Az-PowerShell.ps1')
+    function Get-AzContext {
+        param([switch]$ListAvailable)
+        return $script:AvailableContexts
+    }
+    function Set-AzContext { throw 'Validation must not select an Az context.' }
+    function Disable-AzContextAutosave { throw 'Validation must not change context autosave.' }
+    $script:AvailableContexts = @(
+        [pscustomobject]@{ Subscription = @{ Id = 'test-sub' }; Tenant = @{ Id = 'test-tenant' } }
+        [pscustomobject]@{ Subscription = @{ Id = 'another-sub' }; Tenant = @{ Id = 'another-tenant' } }
+    )
+    $context = Get-RequiredAzContext -SubscriptionId test-sub -ValidateOnly
+    if ($context.Subscription.Id -ne 'test-sub') { throw 'Validation selected the wrong subscription.' }
+    $script:AvailableContexts = @($script:AvailableContexts[1])
+    $rejected = $false
+    try { $null = Get-RequiredAzContext -SubscriptionId test-sub -ValidateOnly } catch {
+        if ($_.Exception.Message -notlike 'No Az PowerShell context found*') { throw }
+        $rejected = $true
+    }
+    if (-not $rejected) { throw 'Validation accepted an unrelated subscription context.' }
+    $script:AvailableContexts = @(
+        [pscustomobject]@{ Subscription = @{ Id = 'test-sub' }; Tenant = @{ Id = 'first-tenant' } }
+        [pscustomobject]@{ Subscription = @{ Id = 'test-sub' }; Tenant = @{ Id = 'second-tenant' } }
+    )
+    $rejected = $false
+    try { $null = Get-RequiredAzContext -SubscriptionId test-sub -ValidateOnly } catch {
+        if ($_.Exception.Message -notlike 'Multiple Az PowerShell tenants*') { throw }
+        $rejected = $true
+    }
+    if (-not $rejected) { throw 'Validation accepted an ambiguous tenant context.' }
     Write-Host 'Offline deployment handoff, preflight, status, and cleanup regressions passed.'
 } finally {
     Remove-Item Env:SRE_TEST_EVENTS, Env:SRE_TEST_PREREQS, Env:SRE_TEST_SCENARIO, `
