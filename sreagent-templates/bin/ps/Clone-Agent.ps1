@@ -15,9 +15,6 @@
 .PARAMETER FromResourceGroup
     Source agent resource group (required with -FromAgent).
 
-.PARAMETER FromSubscription
-    Source agent subscription (default: current az account).
-
 .PARAMETER AgentName
     New agent name for the clone.
 
@@ -29,9 +26,6 @@
 
 .PARAMETER TargetResourceGroups
     Comma-separated RGs the clone should monitor.
-
-.PARAMETER Subscription
-    Target subscription (default: current az account).
 
 .PARAMETER ValidateOnly
     Run validation checks without deploying.
@@ -54,14 +48,10 @@ param(
     [string]$Source,
     [string]$FromAgent,
     [string]$FromResourceGroup,
-    [Alias('FromSubscriptionId')]
-    [string]$FromSubscription,
     [Parameter(Mandatory)][string]$AgentName,
     [Parameter(Mandatory)][string]$ResourceGroup,
     [string]$Location,
     [string]$TargetResourceGroups,
-    [Alias('SubscriptionId')]
-    [string]$Subscription,
     [switch]$ValidateOnly,
     [switch]$SkipExtras,
     [ValidateSet('bicep','terraform')][string]$Backend = 'bicep',
@@ -88,14 +78,10 @@ if (-not $Source -and -not $FromAgent) {
 # ── Step 1: Export from live agent (if -FromAgent) ──
 if ($FromAgent) {
     if (-not $FromResourceGroup) { Write-Error '-FromResourceGroup required with -FromAgent'; exit 1 }
-    if (-not $FromSubscription) { $FromSubscription = (az account show --query id -o tsv 2>$null) }
-    if (-not $FromSubscription) { Write-Error '-FromSubscription required (or az login first)'; exit 1 }
-
     $ExportDir = Join-Path ([System.IO.Path]::GetTempPath()) "$FromAgent-clone-$(Get-Random)"
     Write-Host "── Exporting from live agent: $FromAgent ──"
     $ExportScript = Join-Path $ScriptDir 'Export-Agent.ps1'
     $exportParams = @{
-        Subscription  = $FromSubscription
         ResourceGroup = $FromResourceGroup
         AgentName     = $FromAgent
         Output        = $ExportDir
@@ -190,6 +176,5 @@ if ($Backend -eq 'terraform') {
     $deployParams = @{ InputPath = $Source }
     if ($Force) { $deployParams['Force'] = $true }
     if ($SkipExtras) { $deployParams['SkipExtras'] = $true }
-    if ($Subscription) { $deployParams['Subscription'] = $Subscription }
     & $DeployScript @deployParams
 }

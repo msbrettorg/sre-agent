@@ -10,10 +10,10 @@
          — requires token for audience https://azuresre.dev.
 
       2. ARM (agent resource itself, incident platform PATCH)
-         — uses Az PowerShell with the selected subscription context.
+         — uses the caller's active Az PowerShell context.
 
     Auth:
-      ARM calls         → Az PowerShell context for the requested subscription
+      ARM calls         → the caller's active Az PowerShell context
       data-plane calls  → Az PowerShell token with audience https://azuresre.dev
                           Optional — script continues if unavailable
 
@@ -25,9 +25,6 @@
         2. PAT (optional, headless): set $env:GITHUB_PAT=ghp_xxx before running.
            Script POSTs the PAT silently — no browser.
       ADO — set $env:ADO_PAT, $env:ADO_USE_AAD=1, or $env:ADO_USE_MI=1 (with $env:ADO_ORG).
-
-.PARAMETER Subscription
-    Azure subscription ID.
 
 .PARAMETER ResourceGroup
     Resource group containing the agent.
@@ -42,14 +39,11 @@
     Force overwrite without prompting.
 
 .EXAMPLE
-    ./Apply-Extras.ps1 -Subscription <sub-id> -ResourceGroup rg-myagent -AgentName myagent
+    ./Apply-Extras.ps1 -ResourceGroup rg-myagent -AgentName myagent
 #>
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)]
-    [Alias('SubscriptionId')]
-    [string]$Subscription,
     [Parameter(Mandatory)][string]$ResourceGroup,
     [Parameter(Mandatory)][string]$AgentName,
     # Either supply a pre-assembled extras JSON OR a config directory — Apply-Extras
@@ -98,10 +92,11 @@ Set-StrictMode -Off
 
 $AgentApiVersion = "2026-01-01"
 $ChildApiVersion = "2025-05-01-preview"
-$ArmBase = "https://management.azure.com/subscriptions/$Subscription/resourceGroups/$ResourceGroup/providers/Microsoft.App/agents/$AgentName"
 $AzPowerShellPath = Join-Path (Split-Path $PSScriptRoot -Parent) 'bin/ps/Az-PowerShell.ps1'
 . $AzPowerShellPath
-$AzContext = Get-RequiredAzContext -SubscriptionId $Subscription
+$AzContext = Get-AzContext -ErrorAction Stop
+$Subscription = $AzContext.Subscription.Id
+$ArmBase = "https://management.azure.com/subscriptions/$Subscription/resourceGroups/$ResourceGroup/providers/Microsoft.App/agents/$AgentName"
 
 # ── Resolve agent endpoint and UAMI ────────────────────────────────────────
 try {

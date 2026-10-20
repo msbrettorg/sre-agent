@@ -18,9 +18,6 @@
         automations/             — Scheduled tasks, incident filters, HTTP triggers, platforms
         data/                    — Knowledge, memories, repo instructions
 
-.PARAMETER Subscription
-    Azure subscription ID.
-
 .PARAMETER ResourceGroup
     Resource group containing the agent.
 
@@ -55,15 +52,11 @@
     Show what would be exported, don't write files.
 
 .EXAMPLE
-    .\Export-Agent.ps1 -Subscription <sub> -ResourceGroup <rg> -AgentName <name>
-    .\Export-Agent.ps1 -s <sub> -g <rg> -n <name> -Output /tmp/clone -Set @{agentName='clone1';location='uksouth'}
+    .\Export-Agent.ps1 -ResourceGroup <rg> -AgentName <name>
+    .\Export-Agent.ps1 -g <rg> -n <name> -Output /tmp/clone -Set @{agentName='clone1';location='uksouth'}
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)]
-    [Alias('s', 'SubscriptionId')]
-    [string]$Subscription,
-
     [Parameter(Mandatory)]
     [Alias('g')]
     [string]$ResourceGroup,
@@ -132,6 +125,8 @@ if ($null -ne $Set) {
 
 $AGENT_API_VERSION = '2026-01-01'
 $CHILD_API_VERSION = '2025-05-01-preview'
+$AzContext = Get-AzContext -ErrorAction Stop
+$Subscription = $AzContext.Subscription.Id
 $ARM_BASE    = "https://management.azure.com/subscriptions/${Subscription}/resourceGroups/${ResourceGroup}/providers/Microsoft.App/agents/${AgentName}"
 
 # ─────────────────────────── Prerequisites ───────────────────────────

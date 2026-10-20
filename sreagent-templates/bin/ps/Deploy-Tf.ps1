@@ -245,7 +245,7 @@ try {
     }
     Remove-Item -Path (Join-Path $TfDir 'tf.plan') -Force -ErrorAction SilentlyContinue
 
-    $SubscriptionId = (az account show --query id -o tsv).Trim()
+    $SubscriptionId = (Get-AzContext -ErrorAction Stop).Subscription.Id
 
     Write-Host ''
     Write-Header '─────────────── Deployment Succeeded ───────────────'
@@ -261,7 +261,6 @@ try {
             $ApplyExtrasPs = Join-Path $BicepDir 'Apply-Extras.ps1'
             if (Test-Path $ApplyExtrasPs) {
                 $applyParams = @{
-                    Subscription  = $SubscriptionId
                     ResourceGroup = $RG
                     AgentName     = $AG
                     ExtrasFile    = $ExtrasFile
@@ -276,7 +275,7 @@ try {
                     bash $ApplyExtrasSh $SubscriptionId $RG $AG $ExtrasFile $forceArg
                 } else {
                     Write-Host "  ⚠ Apply-Extras script not found. Run manually:" -ForegroundColor Yellow
-                    Write-Host "    Apply-Extras.ps1 -Subscription $SubscriptionId -ResourceGroup $RG -AgentName $AG -ExtrasFile $ExtrasFile"
+                    Write-Host "    Apply-Extras.ps1 -ResourceGroup $RG -AgentName $AG -ExtrasFile $ExtrasFile"
                 }
             }
         } else {

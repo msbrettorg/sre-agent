@@ -239,8 +239,7 @@ $agentJson = Get-Content (Join-Path $ConfigDir 'agent.json') -Raw
 
 $agentName      = $agentJson | jq -r '.identity.agentName'
 $agentRg        = $agentJson | jq -r '.identity.resourceGroup'
-$agentSub       = $agentJson | Invoke-Jq -Raw -Filter '.identity.subscription // empty'
-$AzContext = if ($agentSub) { Get-RequiredAzContext -SubscriptionId $agentSub } else { $null }
+$AzContext = Get-AzContext -ErrorAction Stop
 $agentLoc       = $agentJson | jq -r '.identity.location'
 $targetRgs      = $agentJson | Invoke-Jq -Compact -Filter 'if .identity.targetResourceGroups | type == "array" then .identity.targetResourceGroups elif .identity.targetResourceGroups | type == "string" and length > 0 then [.identity.targetResourceGroups | split(",")[] | gsub("^\\s+|\\s+$"; "")] else [] end'
 $access         = $agentJson | jq -r '.access.accessLevel'
@@ -296,7 +295,7 @@ if (Test-Path $connFile -PathType Leaf) {
         if ($needsAppId) {
             Write-Log "  resolving AppInsights AppId for connector '$($c.name)'"
             if (-not $AzContext) {
-                Write-Error "A subscription is required in agent.json to resolve AppInsights resource: $aiId"
+                Write-Error "An active Az PowerShell context is required to resolve AppInsights resource: $aiId"
                 exit 1
             }
             $aiResource = Invoke-AzJsonRest -Method GET -Uri "https://management.azure.com${aiId}?api-version=2020-02-02" -DefaultProfile $AzContext
@@ -664,5 +663,5 @@ Write-Host "  $ExtrasFile  <- for Apply-Extras.ps1 (data-plane)"
 Write-Host ''
 Write-Host "Deploy with:"
 Write-Host "  ./bin/ps/Deploy-Agent.ps1 -InputPath $ConfigDir"
-Write-Host "  ./bicep/Apply-Extras.ps1 -Subscription $agentSub -ResourceGroup $agentRg -AgentName $agentName -ExtrasFile $ExtrasFile"
+Write-Host "  ./bicep/Apply-Extras.ps1 -ResourceGroup $agentRg -AgentName $agentName -ExtrasFile $ExtrasFile"
 Write-Host ''

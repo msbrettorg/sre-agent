@@ -206,16 +206,7 @@ $UpgradeChannel = Get-Param 'upgradeChannel' 'Preview'
 $ModelProvider  = Get-Param 'defaultModelProvider' 'Anthropic'
 $MonthlyLimit   = Get-Param 'monthlyAgentUnitLimit' 10000
 
-$RequestedSubscriptionId = if ($IsDirectory) {
-    (Get-Content (Join-Path $InputPath 'agent.json') -Raw | ConvertFrom-Json).identity.subscription
-} else {
-    (Get-AzContext).Subscription.Id
-}
-if (-not $RequestedSubscriptionId) {
-    Write-Fail 'Error: agent.json must specify identity.subscription.'
-    exit 1
-}
-$AzContext = Get-RequiredAzContext -SubscriptionId $RequestedSubscriptionId
+$AzContext = Get-AzContext -ErrorAction Stop
 $SubscriptionId = $AzContext.Subscription.Id
 $SubscriptionName = $AzContext.Subscription.Name
 
@@ -326,7 +317,7 @@ if ($IsDirectory) {
     $DiffScript = Join-Path $ScriptDir 'Diff-Agent.ps1'
     if (Test-Path $DiffScript) {
         try {
-            & $DiffScript -SubscriptionId $SubscriptionId -ResourceGroup $ResourceGroup -AgentName $AgentName -InputPath $InputPath
+            & $DiffScript -ResourceGroup $ResourceGroup -AgentName $AgentName -ConfigDir $InputPath
             $DiffExit = $LASTEXITCODE
         } catch {
             $DiffExit = 1
@@ -343,7 +334,7 @@ if ($IsDirectory) {
                 if (Test-Path $VerifyScript) {
                     Write-Header '── Current state verification ──'
                     try {
-                        & $VerifyScript -SubscriptionId $SubscriptionId -ResourceGroup $ResourceGroup -AgentName $AgentName -Expected $InputPath
+                        & $VerifyScript -ResourceGroup $ResourceGroup -AgentName $AgentName -Expected $InputPath
                         exit $LASTEXITCODE
                     } catch {
                         Write-Host $_.Exception.Message -ForegroundColor Red
@@ -565,7 +556,6 @@ if ($ExtrasFile -and (Test-Path $ExtrasFile -ErrorAction SilentlyContinue)) {
         $ApplyExtrasScript = Join-Path $BicepDir 'Apply-Extras.ps1'
         if (Test-Path $ApplyExtrasScript) {
             $applyParams = @{
-                Subscription  = $SubscriptionId
                 ResourceGroup = $ResourceGroup
                 AgentName     = $AgentName
                 ExtrasFile    = $ExtrasFile
@@ -580,7 +570,7 @@ if ($ExtrasFile -and (Test-Path $ExtrasFile -ErrorAction SilentlyContinue)) {
     }
 } else {
     Write-Host 'Next: apply data-plane config (repos, hooks, knowledge, GitHub/ADO auth):'
-    Write-Host "  .\Apply-Extras.ps1 -SubscriptionId $SubscriptionId -ResourceGroup $ResourceGroup -AgentName $AgentName -ExtrasFile <extras-file>"
+    Write-Host "  .\Apply-Extras.ps1 -ResourceGroup $ResourceGroup -AgentName $AgentName -ExtrasFile <extras-file>"
 }
 
 Write-Header '─────────────────────────────────────────────────────'
@@ -613,7 +603,7 @@ if ($IsDirectory) {
     $VerifyOutput = ''
     if (Test-Path $VerifyScript) {
         try {
-            $VerifyOutput = & $VerifyScript -SubscriptionId $SubscriptionId -ResourceGroup $ResourceGroup -AgentName $AgentName -Expected $InputPath 2>&1 | Out-String
+            $VerifyOutput = & $VerifyScript -ResourceGroup $ResourceGroup -AgentName $AgentName -Expected $InputPath 2>&1 | Out-String
             $VerifyExit = $LASTEXITCODE
         } catch {
             $VerifyOutput = $_.Exception.Message

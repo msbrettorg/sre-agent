@@ -7,9 +7,6 @@
     If -Expected is given, compares counts against the config directory's
     expected-config.json.
 
-.PARAMETER Subscription
-    Azure subscription ID.
-
 .PARAMETER ResourceGroup
     Resource group containing the agent.
 
@@ -20,15 +17,11 @@
     Path to the config directory containing expected-config.json.
 
 .EXAMPLE
-    .\Verify-Agent.ps1 -Subscription <sub> -ResourceGroup <rg> -AgentName <name>
-    .\Verify-Agent.ps1 -s <sub> -g <rg> -n <name> -Expected /tmp/my-agent-export
+    .\Verify-Agent.ps1 -ResourceGroup <rg> -AgentName <name>
+    .\Verify-Agent.ps1 -g <rg> -n <name> -Expected /tmp/my-agent-export
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)]
-    [Alias('s', 'SubscriptionId')]
-    [string]$Subscription,
-
     [Parameter(Mandatory)]
     [Alias('g')]
     [string]$ResourceGroup,
@@ -96,10 +89,11 @@ function Get-ExpList {
 
 $AGENT_API_VERSION = '2026-01-01'
 $CHILD_API_VERSION = '2025-05-01-preview'
-$ARM_BASE    = "https://management.azure.com/subscriptions/${Subscription}/resourceGroups/${ResourceGroup}/providers/Microsoft.App/agents/${AgentName}"
 $AzPowerShellPath = Join-Path $PSScriptRoot 'Az-PowerShell.ps1'
 . $AzPowerShellPath
-$AzContext = Get-RequiredAzContext -SubscriptionId $Subscription
+$AzContext = Get-AzContext -ErrorAction Stop
+$Subscription = $AzContext.Subscription.Id
+$ARM_BASE    = "https://management.azure.com/subscriptions/${Subscription}/resourceGroups/${ResourceGroup}/providers/Microsoft.App/agents/${AgentName}"
 
 $AgentJson = Invoke-AzRestContent -Method GET -Uri "${ARM_BASE}?api-version=${AGENT_API_VERSION}" -DefaultProfile $AzContext
 

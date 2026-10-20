@@ -35,6 +35,9 @@ Deploy the generated configuration:
 ./bin/ps/Deploy-Agent.ps1 -InputPath agents/finops-hubs/
 ```
 
+PowerShell deployment uses the caller's active Az context and subscription.
+It doesn't switch contexts or select a subscription from `agent.json`.
+
 Review `agent.json` and `expected-config.json` before deployment. In particular,
 the verification spec's `agent.defaultModelProvider` must match the provider
 you selected; the checked-in spec currently expects `MicrosoftFoundry`.
@@ -106,15 +109,11 @@ unavailable then, it skips data-plane-only items, including skills, subagents,
 tools, plugins, and knowledge items. Healthy ARM connectors can coexist with
 an incomplete agent. Review the extras warnings, not just the final error.
 
-From an approved interactive environment, authenticate for that audience and
-select the intended subscription:
+Run verification from an approved caller session that already has the intended
+Az context and data-plane authorization. The scripts don't change that context:
 
 ```powershell
-$subscription = '<subscription-id>'
-Connect-AzAccount
-Set-AzContext -SubscriptionId $subscription -Scope Process
-./bin/ps/Verify-Agent.ps1 -Subscription $subscription `
-  -ResourceGroup '<agent-resource-group>' -AgentName '<agent-name>' `
+./bin/ps/Verify-Agent.ps1 -ResourceGroup '<agent-resource-group>' -AgentName '<agent-name>' `
   -Expected agents/finops-hubs/
 ```
 
@@ -141,16 +140,13 @@ reconciles infrastructure and configuration; this isn't an additive-only import.
 An existing UAMI or Application Insights ID refers to a supporting resource,
 not to the agent.
 
-First select the correct Az PowerShell subscription and export the current agent
+Use the caller's active Az PowerShell context and export the current agent
 for reference. Don't change its identity with export's clone `--set` options:
 
 ```powershell
-$subscription = '<existing-subscription-id>'
 $resourceGroup = '<existing-agent-resource-group>'
 $agentName = '<existing-agent-name>'
-Set-AzContext -SubscriptionId $subscription -Scope Process
-./bin/ps/Export-Agent.ps1 -Subscription $subscription `
-  -ResourceGroup $resourceGroup -AgentName $agentName `
+./bin/ps/Export-Agent.ps1 -ResourceGroup $resourceGroup -AgentName $agentName `
   -Output agents/existing-agent-backup/
 ```
 
@@ -188,18 +184,16 @@ Update `expected-config.json` to reflect the intended combined configuration and
 provider. Then use the canonical lifecycle:
 
 ```powershell
-./bin/ps/Diff-Agent.ps1 -Subscription $subscription `
-  -ResourceGroup $resourceGroup -AgentName $agentName -ConfigDir agents/existing-finops/
+./bin/ps/Diff-Agent.ps1 -ResourceGroup $resourceGroup -AgentName $agentName -ConfigDir agents/existing-finops/
 ./bin/ps/Deploy-Agent.ps1 -InputPath agents/existing-finops/ -DryRun
 ./bin/ps/Deploy-Agent.ps1 -InputPath agents/existing-finops/
-./bin/ps/Verify-Agent.ps1 -Subscription $subscription `
-  -ResourceGroup $resourceGroup -AgentName $agentName -Expected agents/existing-finops/
+./bin/ps/Verify-Agent.ps1 -ResourceGroup $resourceGroup -AgentName $agentName -Expected agents/existing-finops/
 ```
 
 Change detection returns nonzero when it finds differences; review them before
 deploying. `--dry-run` assembles and inspects current state but doesn't deploy.
-The scripts use the active Az PowerShell subscription for deployment, so keep it
-aligned with `agent.json.identity.subscription`.
+The scripts use the active Az PowerShell subscription for deployment.
+`agent.json.identity.subscription` does not select or override it.
 
 `bin/ps/Add-Recipe.ps1 -Recipe finops-hubs -AgentDir <exported-directory>` is the
 repository's additive merge helper, but it **doesn't install the complete
