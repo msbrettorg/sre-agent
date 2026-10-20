@@ -69,10 +69,10 @@ fi
 # This function reads the file and inlines its content.
 resolve_file_refs() {
   local json="$1" base_dir="$2"
-  python3 -c "
+  printf '%s' "$json" | python3 -c "
 import json, sys, os
-base = '$base_dir'
-data = json.loads('''$json''') if isinstance('''$json''', str) else json.load(sys.stdin)
+base = sys.argv[1]
+data = json.load(sys.stdin)
 def resolve(obj):
     if isinstance(obj, str):
         # Check if it's a relative path to a file in config/
@@ -96,7 +96,7 @@ def resolve(obj):
         return [resolve(v) for v in obj]
     return obj
 print(json.dumps(resolve(data)))
-" 2>/dev/null || echo "$json"
+" "$base_dir"
 }
 
 # ── Helper: collect all YAML (or JSON) files from a config subdirectory into a JSON array ──
@@ -118,14 +118,14 @@ with open('$f') as fh:
     data = yaml.safe_load(fh)
 print(json.dumps(data))
 " 2>/dev/null) || continue
-        items=$(echo "$items" | jq -c --argjson i "$item" '. + [$i]')
+        items=$(printf '%s\n' "$items" "$item" | jq -sc '.[0] + [.[1]]')
       done
       # Also read JSON files (for backward compat)
       for f in "${full}"/*.json; do
         [[ -f "$f" ]] || continue
         local item
         item=$(cat "$f") || continue
-        items=$(echo "$items" | jq -c --argjson i "$item" '. + [$i]' 2>/dev/null) || continue
+        items=$(printf '%s\n' "$items" "$item" | jq -sc '.[0] + [.[1]]' 2>/dev/null) || continue
       done
       result=$(echo "$result" "$items" | jq -sc 'add // []')
     fi
@@ -319,8 +319,7 @@ if [[ -n "$MD_FILES" ]]; then
   _log "Found ${MD_COUNT} knowledge .md file(s) in data/"
   for mdf in $MD_FILES; do
     fname=$(basename "$mdf")
-    content=$(cat "$mdf")
-    KNOWLEDGE_ITEMS=$(echo "$KNOWLEDGE_ITEMS" | jq --arg name "$fname" --arg content "$content" \
+    KNOWLEDGE_ITEMS=$(echo "$KNOWLEDGE_ITEMS" | jq --arg name "$fname" --rawfile content "$mdf" \
       '. + [{"name": $name, "type": "KnowledgeText", "content": $content}]')
   done
 fi
@@ -331,7 +330,9 @@ _log "knowledge: $(echo "$KNOWLEDGE" | jq 'length'), items: $(echo "$KNOWLEDGE_I
 
 _info "Writing ${PARAMS_FILE}"
 
-jq -n \
+printf '%s\n' "$TAGS" "$NET_ALLOWED_HOSTS" "$NET_ALLOWED_REGISTRIES" \
+  "$NET_ALLOWED_CODE_REPOS" "$TARGET_RGS" "$TOGGLES" "$CONNECTOR_TOGGLES" "$CONNECTORS" |
+jq -n --slurpfile config /dev/stdin \
   --arg agent "$AGENT_NAME" \
   --arg rg "$AGENT_RG" \
   --arg loc "$AGENT_LOC" \
@@ -340,28 +341,15 @@ jq -n \
   --arg upgradeChannel "$UPGRADE_CHANNEL" \
   --arg modelProvider "$MODEL_PROVIDER" \
   --argjson monthlyLimit "$MONTHLY_LIMIT" \
-  --argjson tags "$TAGS" \
   --arg existingUami "$EXISTING_UAMI" \
   --arg existingAi "$EXISTING_AI" \
   --arg vnetSubnetId "$NET_SUBNET_ID" \
   --arg egressMode "$EGRESS_MODE" \
-  --argjson allowedHosts "$NET_ALLOWED_HOSTS" \
-  --argjson allowedRegistries "$NET_ALLOWED_REGISTRIES" \
-  --argjson allowedCodeRepositories "$NET_ALLOWED_CODE_REPOS" \
   --argjson allowMcp "$NET_ALLOW_MCP" \
   --argjson privateDns "$NET_PRIVATE_DNS" \
-  --argjson targetRgs "$TARGET_RGS" \
-  --argjson toggles "$TOGGLES" \
-  --argjson ctog "$CONNECTOR_TOGGLES" \
-  --argjson connectors "$CONNECTORS" \
-  --argjson tools "$TOOLS" \
-  --argjson skills "$SKILLS" \
-  --argjson subagents "$SUBAGENTS" \
-  --argjson scheduledTasks "$SCHEDULED_TASKS" \
-  --argjson incidentFilters "$INCIDENT_FILTERS" \
-  --argjson commonPrompts "$COMMON_PROMPTS" \
-  --argjson pluginConfigs "$PLUGIN_CONFIGS" \
-  '{
+  '$config as [$tags, $allowedHosts, $allowedRegistries, $allowedCodeRepositories,
+    $targetRgs, $toggles, $ctog, $connectors] |
+  {
     "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
     "contentVersion": "1.0.0.0",
     "parameters": {
@@ -413,31 +401,19 @@ _log "Wrote $(wc -c < "$PARAMS_FILE" | tr -d ' ') bytes"
 
 _info "Writing ${EXTRAS_FILE}"
 
-jq -n \
-  --argjson repos "$REPOS" \
-  --argjson incidentPlatforms "$INCIDENT_PLATFORMS" \
-  --argjson incidentFilters "$INCIDENT_FILTERS" \
-  --argjson scheduledTasks "$SCHEDULED_TASKS" \
-  --argjson hooks "$HOOKS" \
-  --argjson commonPrompts "$COMMON_PROMPTS" \
-  --argjson httpTriggers "$HTTP_TRIGGERS" \
-  --argjson knowledge "$KNOWLEDGE" \
-  --argjson knowledgeItems "$KNOWLEDGE_ITEMS" \
-  --argjson synthesizedKnowledge "$SYNTH_KNOWLEDGE" \
+printf '%s\n' "$REPOS" "$INCIDENT_PLATFORMS" "$INCIDENT_FILTERS" "$SCHEDULED_TASKS" \
+  "$HOOKS" "$COMMON_PROMPTS" "$HTTP_TRIGGERS" "$KNOWLEDGE" "$KNOWLEDGE_ITEMS" \
+  "$SYNTH_KNOWLEDGE" "$REPO_INSTRUCTIONS" "$MARKETPLACES" "$INSTALLATIONS" \
+  "$CONNECTORS" "$SKILLS" "$SUBAGENTS" "$TOOLS" "$PLUGIN_CONFIGS" \
+  "$TOOL_PERMISSIONS" "$TOOL_OVERRIDES" "$GITHUB_DOMAINS" "$CONNECTORV2" |
+jq -n --slurpfile config /dev/stdin \
   --arg synthesizedKnowledgeDir "$SYNTH_KNOWLEDGE_DIR" \
-  --argjson repoInstructions "$REPO_INSTRUCTIONS" \
-  --argjson marketplaces "$MARKETPLACES" \
-  --argjson installations "$INSTALLATIONS" \
-  --argjson connectors "$CONNECTORS" \
-  --argjson skills "$SKILLS" \
-  --argjson subagents "$SUBAGENTS" \
-  --argjson tools "$TOOLS" \
-  --argjson pluginConfigs "$PLUGIN_CONFIGS" \
-  --argjson toolPermissions "$TOOL_PERMISSIONS" \
-  --argjson toolOverrides "$TOOL_OVERRIDES" \
-  --argjson githubDomains "$GITHUB_DOMAINS" \
-  --argjson connectorV2 "$CONNECTORV2" \
-  '{
+  '$config as [$repos, $incidentPlatforms, $incidentFilters, $scheduledTasks,
+    $hooks, $commonPrompts, $httpTriggers, $knowledge, $knowledgeItems,
+    $synthesizedKnowledge, $repoInstructions, $marketplaces, $installations,
+    $connectors, $skills, $subagents, $tools, $pluginConfigs,
+    $toolPermissions, $toolOverrides, $githubDomains, $connectorV2] |
+  {
     "repos": $repos,
     "incidentPlatforms": $incidentPlatforms,
     "incidentFilters": $incidentFilters,

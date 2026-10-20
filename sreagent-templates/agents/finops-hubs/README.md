@@ -2,6 +2,19 @@
 
 Deploy an Azure SRE Agent for FinOps Hubs cost analytics and FinOps operations.
 
+## Deployment guide
+
+Use the [recipe deployment guide](../../recipes/finops-hubs/README.md) for:
+
+- [Expected output and what each success marker proves](../../recipes/finops-hubs/README.md#expected-deployment-output)
+- [Cloud Shell token failures, deployment impact, and recovery](../../recipes/finops-hubs/README.md#cloud-shell-data-plane-token-failure)
+- [Existing-agent parameters and update limitations](../../recipes/finops-hubs/README.md#deploy-to-an-existing-sre-agent)
+- [Private-network configuration and prerequisites](../../recipes/finops-hubs/README.md#private-networking)
+- [The supported minimal-agent alternative without a Hub and all 19 task limitations](../../recipes/finops-hubs/README.md#deploy-without-a-finops-hub)
+
+The complete FinOps Hubs recipe still requires a Hub. No-Hub and private-network
+guidance doesn't add new connectors, integrations, or networking infrastructure.
+
 ## Prerequisites
 
 - A deployed FinOps Hub with an Azure Data Explorer endpoint
@@ -16,20 +29,18 @@ Deploy an Azure SRE Agent for FinOps Hubs cost analytics and FinOps operations.
 
 Generate an agent configuration:
 
-```bash
-./bin/new-agent.sh --recipe finops-hubs --non-interactive \
-  --set agentName=finops-hubs-sre \
-  --set resourceGroup=finops-hubs-sre \
-  --set location=eastus2 \
-  --set targetRGs=finops-hubs-demo \
-  --set finopsHubClusterUri=https://example.westus.kusto.windows.net/Hub \
-  -o agents/finops-hubs/
+```powershell
+./bin/ps/New-Agent.ps1 -Recipe finops-hubs -NonInteractive `
+  -Set @{ agentName = 'finops-hubs-sre'; resourceGroup = 'finops-hubs-sre'
+          location = 'eastus2'; targetRGs = 'finops-hubs-demo'
+          finopsHubClusterUri = 'https://example.westus.kusto.windows.net/Hub' } `
+  -Output agents/finops-hubs/
 ```
 
 Deploy the generated configuration:
 
-```bash
-./bin/deploy.sh agents/finops-hubs/
+```powershell
+./bin/ps/Deploy-Agent.ps1 -InputPath agents/finops-hubs/
 ```
 
 ## Post-deployment setup

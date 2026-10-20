@@ -113,13 +113,18 @@ function Invoke-Dp {
     param([string]$Path)
     $raw = Invoke-AzRestContent -Method GET -Uri "${Endpoint}${Path}" `
         -ResourceId 'https://azuresre.dev' -DefaultProfile $AzContext
-    if ($raw) {
-        try {
-            $null = $raw | ConvertFrom-Json
-            return $raw
-        } catch { }
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+        throw "FAIL: Empty JSON from data-plane endpoint: $Path"
     }
-    return '{}'
+    try {
+        $value = ConvertFrom-Json -InputObject $raw -NoEnumerate -ErrorAction Stop
+    } catch {
+        throw "FAIL: Invalid JSON from data-plane endpoint: $Path ($($_.Exception.Message))"
+    }
+    if ($null -eq $value) {
+        throw "FAIL: Null JSON from data-plane endpoint: $Path"
+    }
+    return $raw
 }
 
 function Invoke-Arm {

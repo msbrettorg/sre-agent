@@ -63,20 +63,32 @@ if [[ -z "$ENDPOINT" || "$ENDPOINT" == "null" ]]; then
   exit 1
 fi
 
-TOKEN=$(az account get-access-token --resource https://azuresre.dev --query accessToken -o tsv 2>/dev/null)
-if [[ -z "$TOKEN" ]]; then
-  echo "FAIL: Could not get data-plane token"
+TOKEN_ERROR=$(mktemp)
+TOKEN_RC=0
+TOKEN=$(az account get-access-token --resource https://azuresre.dev --subscription "$SUB" \
+  --query accessToken -o tsv 2>"$TOKEN_ERROR") || TOKEN_RC=$?
+if [[ "$TOKEN_RC" -ne 0 || -z "$TOKEN" ]]; then
+  echo "FAIL: Could not get data-plane token (audience https://azuresre.dev)" >&2
+  cat "$TOKEN_ERROR" >&2
+  rm -f "$TOKEN_ERROR"
+  echo "Verification incomplete; this does not roll back ARM deployment or confirm data-plane configuration." >&2
+  echo "Cloud Shell: sign in with az login --scope \"https://azuresre.dev/.default\", select subscription ${SUB}, then rerun verification." >&2
+  echo "If sign-in is blocked, use an approved environment or ask your tenant administrator to review the Azure CLI error. Do not infer a connector permissions or timing issue from this message alone." >&2
   exit 1
 fi
+rm -f "$TOKEN_ERROR"
 
 dp_get() {
   local raw
-  raw=$(curl -sS "$ENDPOINT$1" -H "Authorization: Bearer $TOKEN" 2>/dev/null)
-  # Validate JSON; return empty object if response is HTML/error
+  raw=$(curl -fsS "$ENDPOINT$1" -H "Authorization: Bearer $TOKEN") || {
+    echo "FAIL: Data-plane request failed: $1 (check authentication, agent access, and endpoint reachability)" >&2
+    return 1
+  }
   if echo "$raw" | jq -e 'type' >/dev/null 2>&1; then
     echo "$raw"
   else
-    echo '{}'
+    echo "FAIL: Invalid JSON from data-plane endpoint: $1" >&2
+    return 1
   fi
 }
 arm_get() { az rest -m GET --url "${ARM_BASE}$1?api-version=${CHILD_API_VERSION}" -o json 2>/dev/null || echo "{}"; }
@@ -154,7 +166,7 @@ fi
 EXP_ENABLED_TOOL_CT=$(exp '.enabledTools | length' "0")
 EXP_ENABLED_TOOL_NAMES=$(exp_list '.enabledTools')
 if [[ "$EXP_ENABLED_TOOL_CT" -gt 0 ]]; then
-  BUILTIN_TOOLS=$(dp_get "/api/v2/agent/tools")
+  BUILTIN_TOOLS=$(dp_get "/api/v2/agent/tools") || exit 1
   ACTUAL_ENABLED_TOOL_LIST=$(echo "$BUILTIN_TOOLS" | jq -r '(.data // .value // .)[]? | select(.enabled == true) | .name' 2>/dev/null | sort -u)
   EXPECTED_ENABLED_TOOL_LIST=$(echo "$EXPECTED_CONFIG" | jq -r '.enabledTools[]?' 2>/dev/null | sort -u)
   REQUIRED_ENABLED_TOOL_NAMES=$(comm -12 <(printf '%s\n' "$EXPECTED_ENABLED_TOOL_LIST") <(printf '%s\n' "$ACTUAL_ENABLED_TOOL_LIST") | paste -sd, -)
@@ -164,7 +176,7 @@ if [[ "$EXP_ENABLED_TOOL_CT" -gt 0 ]]; then
 fi
 
 # ── Skills ──
-SKILLS=$(dp_get "/api/v1/extendedAgent/skills")
+SKILLS=$(dp_get "/api/v1/extendedAgent/skills") || exit 1
 SKILL_CT=$(echo "$SKILLS" | jq 'if type == "array" then length elif .value then (.value | length) else 0 end' 2>/dev/null || echo 0)
 SKILL_NAMES=$(echo "$SKILLS" | jq -r '(if type == "array" then . elif .value then .value else [] end)[].name' 2>/dev/null | sort | tr '\n' ', ' | sed 's/,$//')
 EXP_SKILL_CT=$(exp '((.skills // []) + (.pluginSkills // [])) | length' "-")
@@ -183,7 +195,7 @@ else
 fi
 
 # ── Subagents ──
-SUBAGENTS=$(dp_get "/api/v2/extendedAgent/agents")
+SUBAGENTS=$(dp_get "/api/v2/extendedAgent/agents") || exit 1
 SA_CT=$(echo "$SUBAGENTS" | jq '.value | length' 2>/dev/null || echo 0)
 SA_NAMES=$(echo "$SUBAGENTS" | jq -r '.value[].name' 2>/dev/null | sort | tr '\n' ', ' | sed 's/,$//')
 EXP_SA_CT=$(exp '.subagents | length' "-")
@@ -192,7 +204,7 @@ check "Subagents" "$SA_CT" "$EXP_SA_CT"
 [[ -n "$EXP_SA_NAMES" ]] && check "Subagent names" "$SA_NAMES" "$EXP_SA_NAMES" || RESULTS="${RESULTS}\n  Subagent names|${SA_NAMES}|—|"
 
 # ── Hooks ──
-HOOKS=$(dp_get "/api/v2/extendedAgent/hooks")
+HOOKS=$(dp_get "/api/v2/extendedAgent/hooks") || exit 1
 HOOK_CT=$(echo "$HOOKS" | jq '.value // . | if type == "array" then length else 0 end' 2>/dev/null || echo 0)
 HOOK_NAMES=$(echo "$HOOKS" | jq -r '(.value // .)[].name' 2>/dev/null | sort | tr '\n' ', ' | sed 's/,$//')
 EXP_HOOK_CT=$(exp '.hooks | length' "-")
@@ -201,7 +213,7 @@ check "Hooks" "$HOOK_CT" "$EXP_HOOK_CT"
 [[ -n "$EXP_HOOK_NAMES" ]] && check "Hook names" "$HOOK_NAMES" "$EXP_HOOK_NAMES" || RESULTS="${RESULTS}\n  Hook names|${HOOK_NAMES}|—|"
 
 # ── Common Prompts ──
-PROMPTS=$(dp_get "/api/v2/extendedAgent/commonprompts")
+PROMPTS=$(dp_get "/api/v2/extendedAgent/commonprompts") || exit 1
 PROMPT_CT=$(echo "$PROMPTS" | jq '.value // . | if type == "array" then length else 0 end' 2>/dev/null || echo 0)
 PROMPT_NAMES=$(echo "$PROMPTS" | jq -r '(.value // .)[].name' 2>/dev/null | sort | tr '\n' ', ' | sed 's/,$//')
 EXP_PROMPT_CT=$(exp '.commonPrompts | length' "-")
@@ -210,7 +222,7 @@ check "Common Prompts" "$PROMPT_CT" "$EXP_PROMPT_CT"
 [[ -n "$EXP_PROMPT_NAMES" ]] && check "Prompt names" "$PROMPT_NAMES" "$EXP_PROMPT_NAMES" || RESULTS="${RESULTS}\n  Prompt names|${PROMPT_NAMES}|—|"
 
 # ── Scheduled Tasks ──
-TASKS=$(dp_get "/api/v1/scheduledtasks")
+TASKS=$(dp_get "/api/v1/scheduledtasks") || exit 1
 TASK_CT=$(echo "$TASKS" | jq 'if type == "array" then length else 0 end' 2>/dev/null || echo 0)
 TASK_UNIQUE=$(echo "$TASKS" | jq '[.[].name] | unique | length' 2>/dev/null || echo 0)
 TASK_NAMES=$(echo "$TASKS" | jq -r '[.[].name] | unique | sort | join(",")' 2>/dev/null)
@@ -221,7 +233,7 @@ check "Scheduled Tasks (unique)" "$TASK_UNIQUE" "$EXP_TASK_CT"
 [[ "$TASK_CT" != "$TASK_UNIQUE" ]] && RESULTS="${RESULTS}\n  ⚠️  Duplicates|${TASK_CT} total, ${TASK_UNIQUE} unique|—|"
 
 # ── Response Plans (Incident Filters) ──
-FILTERS=$(dp_get "/api/v1/incidentPlayground/filters")
+FILTERS=$(dp_get "/api/v1/incidentPlayground/filters") || exit 1
 FILTER_CT=$(echo "$FILTERS" | jq 'if type == "array" then length else 0 end' 2>/dev/null || echo 0)
 FILTER_NAMES=$(echo "$FILTERS" | jq -r '.[].id' 2>/dev/null | sort | tr '\n' ', ' | sed 's/,$//')
 EXP_FILTER_CT=$(exp '.responsePlans | length' "-")
@@ -232,12 +244,12 @@ check "Response Plans" "$FILTER_CT" "$EXP_FILTER_CT"
 [[ -n "$EXP_FILTER_NAMES" ]] && check "Filter names" "$FILTER_NAMES" "$EXP_FILTER_NAMES" || RESULTS="${RESULTS}\n  Filter names|${FILTER_NAMES}|—|"
 
 # ── GitHub ──
-GH_STATUS=$(dp_get "/api/v1/Github/auth/status")
+GH_STATUS=$(dp_get "/api/v1/Github/auth/status") || exit 1
 GH_CONFIGURED=$(echo "$GH_STATUS" | jq -r '.isConfigured // .hosts[0].isConfigured // false' 2>/dev/null)
 check "GitHub OAuth" "$GH_CONFIGURED" "-"
 
 # ── Repos ──
-REPOS=$(dp_get "/api/v2/repos")
+REPOS=$(dp_get "/api/v2/repos") || exit 1
 REPO_CT=$(echo "$REPOS" | jq '.value // . | if type == "array" then length else 0 end' 2>/dev/null || echo 0)
 REPO_NAMES=$(echo "$REPOS" | jq -r '(.value // .)[].name' 2>/dev/null | sort | tr '\n' ', ' | sed 's/,$//')
 EXP_REPO_CT=$(exp '.repos | length' "-")

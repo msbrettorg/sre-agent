@@ -344,7 +344,11 @@ if ($IsDirectory) {
                     Write-Header '── Current state verification ──'
                     try {
                         & $VerifyScript -SubscriptionId $SubscriptionId -ResourceGroup $ResourceGroup -AgentName $AgentName -Expected $InputPath
-                    } catch { }
+                        exit $LASTEXITCODE
+                    } catch {
+                        Write-Host $_.Exception.Message -ForegroundColor Red
+                        exit 1
+                    }
                 }
                 exit 0
             } else {
@@ -601,6 +605,7 @@ Portal:     $portalUrl
 } catch { }
 
 # ── Post-deploy verification ──
+$VerifyExit = 0
 if ($IsDirectory) {
     Write-Host ''
     Write-Header '── Post-deploy verification ──'
@@ -609,13 +614,19 @@ if ($IsDirectory) {
     if (Test-Path $VerifyScript) {
         try {
             $VerifyOutput = & $VerifyScript -SubscriptionId $SubscriptionId -ResourceGroup $ResourceGroup -AgentName $AgentName -Expected $InputPath 2>&1 | Out-String
+            $VerifyExit = $LASTEXITCODE
         } catch {
             $VerifyOutput = $_.Exception.Message
+            $VerifyExit = 1
         }
     } else {
-        $VerifyOutput = "(Verify-Agent.ps1 not found at $VerifyScript)"
+        $VerifyOutput = "FAIL: Verify-Agent.ps1 not found at $VerifyScript"
+        $VerifyExit = 1
     }
     Write-Host $VerifyOutput
+    if ($VerifyExit -ne 0) {
+        Write-Host '  ARM deployment succeeded, but verification failed. Review the log before using the agent.' -ForegroundColor Red
+    }
 
     # Append verify results to log
     try {
@@ -834,3 +845,4 @@ foreach ($f in $CleanupFiles) {
         Remove-Item $f -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
+exit $VerifyExit

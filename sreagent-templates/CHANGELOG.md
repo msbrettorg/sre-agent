@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Documented FinOps Hubs deployment output, token recovery, existing-agent
+  preservation limits, the private-only Kusto connector limitation, and
+  the minimal-agent alternative and scheduled-task limitations without a Hub.
+- Added the local-only savings plans dashboard without changing the hosted Live Report.
 - Added 15 live-tested FinOps Hub `Quota()` Kusto tools for quota usage,
   headroom, SKU restrictions, availability-zone mappings, and capacity
   inventory, assigned only to the FinOps Hub database specialist.
@@ -26,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   plugin sources resolve during unattended deployments.
 
 ### Fixed
+- Streamed Bash assembly JSON rather than passing large payloads as process
+  arguments, including inline tool content and resolved skill references.
+- Propagated verification failures through both deploy backends. Data-plane
+  HTTP and invalid-JSON errors no longer appear as empty configuration.
+- Preserved Bash verifier token diagnostics; the PowerShell verifier retains
+  Az PowerShell error details from its native REST helper.
 - Removed the invalid `finops-hubs` MACC Kusto proxy and required all specialist
   agents to treat MACC billing-contract evidence as distinct from reservations,
   savings plans, capacity reservations, and commitment-discount analytics.
@@ -46,6 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deployments aren't reported as failed.
 
 ### Testing
+- Added focused PowerShell regression checks for native verification failures
+  and deployment status propagation.
 - Added focused four-backend dry-run coverage for the `finops-hubs` recipe.
 
 ## [1.0.0] — 2026-05-07

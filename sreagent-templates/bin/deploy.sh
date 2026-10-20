@@ -159,11 +159,9 @@ if [[ -d "$INPUT" ]]; then
     if [[ -z "$FORCE" ]]; then
       echo "  Skipping deployment. Use --force to redeploy anyway."
       echo
-      # Check connector health even when skipping deploy
-      check_connector_health "$SUB" "$RG" "$AG"
-      # Still run verify to confirm current state
+      # Verification also checks connector health when deployment is skipped.
       echo "── Current state verification ──"
-      "${SCRIPT_DIR}/verify-agent.sh" "$SUB" "$RG" "$AG" --expected "$INPUT" 2>&1 || true
+      "${SCRIPT_DIR}/verify-agent.sh" "$SUB" "$RG" "$AG" --expected "$INPUT" 2>&1
       exit 0
     else
       echo "  --force: redeploying anyway."
@@ -415,11 +413,15 @@ DEPLOY_LOG="${LOG_DIR}/deploy-$(date +%Y%m%d-%H%M%S).log"
 } > "$DEPLOY_LOG" 2>/dev/null || true
 
 # ── Post-deploy verification ──
+VERIFY_RC=0
 if [[ -d "$INPUT" ]]; then
   echo
   echo "── Post-deploy verification ──"
-  VERIFY_OUTPUT=$("${SCRIPT_DIR}/verify-agent.sh" "$SUB" "$RG" "$AG" --expected "$INPUT" 2>&1) || true
+  VERIFY_OUTPUT=$("${SCRIPT_DIR}/verify-agent.sh" "$SUB" "$RG" "$AG" --expected "$INPUT" 2>&1) || VERIFY_RC=$?
   echo "$VERIFY_OUTPUT"
+  if [[ "$VERIFY_RC" -ne 0 ]]; then
+    echo "  ARM deployment succeeded, but verification failed. Review the log before using the agent."
+  fi
   # Append verify results to log
   {
     echo "── Verification Results ──"
@@ -665,3 +667,4 @@ if [[ -d "$INPUT" ]]; then
 fi
 
 rm -f "$TMP"
+exit "$VERIFY_RC"
