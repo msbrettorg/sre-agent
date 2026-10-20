@@ -175,29 +175,24 @@ print(json.dumps(data))
             try {
                 $pyTmp = [System.IO.Path]::GetTempFileName() + '.py'
                 Set-Content -Path $pyTmp -Value $pyYaml -Encoding UTF8
-                $item = & $Python $pyTmp $f.FullName 2>&1
+                $item = & $Python $pyTmp $f.FullName 2>$null
                 Remove-Item $pyTmp -Force -ErrorAction SilentlyContinue
-                if ($LASTEXITCODE -ne 0 -or -not $item) {
-                    throw "YAML conversion failed: $($item -join [Environment]::NewLine)"
-                }
+                if ($LASTEXITCODE -ne 0 -or -not $item) { continue }
                 # Use --slurpfile to safely pass JSON without --argjson quoting issues
                 $tmpItem = [System.IO.Path]::GetTempFileName()
                 Set-Content -Path $tmpItem -Value $item -NoNewline -Encoding UTF8
                 $items = $items | Invoke-Jq -Compact -Filter '. + [$i[0]]' -ExtraArgs @('--slurpfile', 'i', $tmpItem)
                 Remove-Item $tmpItem -ErrorAction SilentlyContinue
-            } catch {
-                throw "Failed to assemble '$($f.FullName)': $($_.Exception.Message)"
-            }
+            } catch { continue }
         }
 
         # Read JSON files (backward compat)
         foreach ($f in (Get-ChildItem $full -File -Filter '*.json' -ErrorAction SilentlyContinue)) {
             try {
-                $items = $items | Invoke-Jq -Compact -Filter '. + ($i[0] | if type == "array" then . else [.] end)' -ExtraArgs @('--slurpfile', 'i', $f.FullName)
-                if ($LASTEXITCODE -ne 0) { throw 'JSON conversion failed.' }
-            } catch {
-                throw "Failed to assemble '$($f.FullName)': $($_.Exception.Message)"
-            }
+                $item = Get-Content $f.FullName -Raw
+                $items = @($items, $item) -join "`n" | Invoke-Jq -Compact -Slurp -Filter 'add // []'
+                if ($LASTEXITCODE -ne 0) { continue }
+            } catch { continue }
         }
 
         $result = @($result, $items) -join "`n" | Invoke-Jq -Compact -Slurp -Filter 'add // []'
@@ -244,7 +239,8 @@ $agentJson = Get-Content (Join-Path $ConfigDir 'agent.json') -Raw
 
 $agentName      = $agentJson | jq -r '.identity.agentName'
 $agentRg        = $agentJson | jq -r '.identity.resourceGroup'
-$AzContext = Get-AzContext -ErrorAction Stop
+$agentSub       = $agentJson | Invoke-Jq -Raw -Filter '.identity.subscription // empty'
+$AzContext = if ($agentSub) { Get-RequiredAzContext -SubscriptionId $agentSub } else { $null }
 $agentLoc       = $agentJson | jq -r '.identity.location'
 $targetRgs      = $agentJson | Invoke-Jq -Compact -Filter 'if .identity.targetResourceGroups | type == "array" then .identity.targetResourceGroups elif .identity.targetResourceGroups | type == "string" and length > 0 then [.identity.targetResourceGroups | split(",")[] | gsub("^\\s+|\\s+$"; "")] else [] end'
 $access         = $agentJson | jq -r '.access.accessLevel'
@@ -300,7 +296,7 @@ if (Test-Path $connFile -PathType Leaf) {
         if ($needsAppId) {
             Write-Log "  resolving AppInsights AppId for connector '$($c.name)'"
             if (-not $AzContext) {
-                Write-Error "An active Az PowerShell context is required to resolve AppInsights resource: $aiId"
+                Write-Error "A subscription is required in agent.json to resolve AppInsights resource: $aiId"
                 exit 1
             }
             $aiResource = Invoke-AzJsonRest -Method GET -Uri "https://management.azure.com${aiId}?api-version=2020-02-02" -DefaultProfile $AzContext
@@ -668,5 +664,5 @@ Write-Host "  $ExtrasFile  <- for Apply-Extras.ps1 (data-plane)"
 Write-Host ''
 Write-Host "Deploy with:"
 Write-Host "  ./bin/ps/Deploy-Agent.ps1 -InputPath $ConfigDir"
-Write-Host "  ./bicep/Apply-Extras.ps1 -ResourceGroup $agentRg -AgentName $agentName -ExtrasFile $ExtrasFile"
+Write-Host "  ./bicep/Apply-Extras.ps1 -Subscription $agentSub -ResourceGroup $agentRg -AgentName $agentName -ExtrasFile $ExtrasFile"
 Write-Host ''

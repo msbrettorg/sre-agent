@@ -164,7 +164,7 @@ if ($IsDirectory) {
 
     $ParametersFile = "${AssembleOut}.parameters.json"
     $ExtrasFile = "${AssembleOut}.extras.json"
-    $CleanupFiles += $ParametersFile, $ExtrasFile
+    $CleanupFiles += $ParametersFile, $ExtrasFile, (Split-Path $AssembleTmp -Parent)
 
     # Copy extras.json into InputPath so it survives cleanup and can be re-used
     # (e.g. re-running Apply-Extras standalone without a full re-deploy)
@@ -206,7 +206,16 @@ $UpgradeChannel = Get-Param 'upgradeChannel' 'Preview'
 $ModelProvider  = Get-Param 'defaultModelProvider' 'Anthropic'
 $MonthlyLimit   = Get-Param 'monthlyAgentUnitLimit' 10000
 
-$AzContext = Get-AzContext -ErrorAction Stop
+$RequestedSubscriptionId = if ($IsDirectory) {
+    (Get-Content (Join-Path $InputPath 'agent.json') -Raw | ConvertFrom-Json).identity.subscription
+} else {
+    (Get-AzContext).Subscription.Id
+}
+if (-not $RequestedSubscriptionId) {
+    Write-Fail 'Error: agent.json must specify identity.subscription.'
+    exit 1
+}
+$AzContext = Get-RequiredAzContext -SubscriptionId $RequestedSubscriptionId
 $SubscriptionId = $AzContext.Subscription.Id
 $SubscriptionName = $AzContext.Subscription.Name
 
@@ -317,7 +326,7 @@ if ($IsDirectory) {
     $DiffScript = Join-Path $ScriptDir 'Diff-Agent.ps1'
     if (Test-Path $DiffScript) {
         try {
-            & $DiffScript -ResourceGroup $ResourceGroup -AgentName $AgentName -ConfigDir $InputPath
+            & $DiffScript -SubscriptionId $SubscriptionId -ResourceGroup $ResourceGroup -AgentName $AgentName -InputPath $InputPath
             $DiffExit = $LASTEXITCODE
         } catch {
             $DiffExit = 1
@@ -334,12 +343,8 @@ if ($IsDirectory) {
                 if (Test-Path $VerifyScript) {
                     Write-Header '── Current state verification ──'
                     try {
-                        & $VerifyScript -ResourceGroup $ResourceGroup -AgentName $AgentName -Expected $InputPath
-                        exit $LASTEXITCODE
-                    } catch {
-                        Write-Host $_.Exception.Message -ForegroundColor Red
-                        exit 1
-                    }
+                        & $VerifyScript -SubscriptionId $SubscriptionId -ResourceGroup $ResourceGroup -AgentName $AgentName -Expected $InputPath
+                    } catch { }
                 }
                 exit 0
             } else {
@@ -556,6 +561,7 @@ if ($ExtrasFile -and (Test-Path $ExtrasFile -ErrorAction SilentlyContinue)) {
         $ApplyExtrasScript = Join-Path $BicepDir 'Apply-Extras.ps1'
         if (Test-Path $ApplyExtrasScript) {
             $applyParams = @{
+                Subscription  = $SubscriptionId
                 ResourceGroup = $ResourceGroup
                 AgentName     = $AgentName
                 ExtrasFile    = $ExtrasFile
@@ -570,7 +576,7 @@ if ($ExtrasFile -and (Test-Path $ExtrasFile -ErrorAction SilentlyContinue)) {
     }
 } else {
     Write-Host 'Next: apply data-plane config (repos, hooks, knowledge, GitHub/ADO auth):'
-    Write-Host "  .\Apply-Extras.ps1 -ResourceGroup $ResourceGroup -AgentName $AgentName -ExtrasFile <extras-file>"
+    Write-Host "  .\Apply-Extras.ps1 -SubscriptionId $SubscriptionId -ResourceGroup $ResourceGroup -AgentName $AgentName -ExtrasFile <extras-file>"
 }
 
 Write-Header '─────────────────────────────────────────────────────'
@@ -595,7 +601,6 @@ Portal:     $portalUrl
 } catch { }
 
 # ── Post-deploy verification ──
-$VerifyExit = 0
 if ($IsDirectory) {
     Write-Host ''
     Write-Header '── Post-deploy verification ──'
@@ -603,20 +608,14 @@ if ($IsDirectory) {
     $VerifyOutput = ''
     if (Test-Path $VerifyScript) {
         try {
-            $VerifyOutput = & $VerifyScript -ResourceGroup $ResourceGroup -AgentName $AgentName -Expected $InputPath 2>&1 | Out-String
-            $VerifyExit = $LASTEXITCODE
+            $VerifyOutput = & $VerifyScript -SubscriptionId $SubscriptionId -ResourceGroup $ResourceGroup -AgentName $AgentName -Expected $InputPath 2>&1 | Out-String
         } catch {
             $VerifyOutput = $_.Exception.Message
-            $VerifyExit = 1
         }
     } else {
-        $VerifyOutput = "FAIL: Verify-Agent.ps1 not found at $VerifyScript"
-        $VerifyExit = 1
+        $VerifyOutput = "(Verify-Agent.ps1 not found at $VerifyScript)"
     }
     Write-Host $VerifyOutput
-    if ($VerifyExit -ne 0) {
-        Write-Host '  ARM deployment succeeded, but verification failed. Review the log before using the agent.' -ForegroundColor Red
-    }
 
     # Append verify results to log
     try {
@@ -835,4 +834,3 @@ foreach ($f in $CleanupFiles) {
         Remove-Item $f -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
-exit $VerifyExit

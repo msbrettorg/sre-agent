@@ -11,6 +11,9 @@
       1 = changes detected (prints diff table)
       2 = agent doesn't exist (all items will be created)
 
+.PARAMETER Subscription
+    Azure subscription ID.
+
 .PARAMETER ResourceGroup
     Resource group containing the agent.
 
@@ -21,10 +24,14 @@
     Path to the config directory to compare against.
 
 .EXAMPLE
-    .\Diff-Agent.ps1 -ResourceGroup <rg> -AgentName <name> -ConfigDir /tmp/my-export
+    .\Diff-Agent.ps1 -Subscription <sub> -ResourceGroup <rg> -AgentName <name> -ConfigDir /tmp/my-export
 #>
 [CmdletBinding()]
 param(
+    [Parameter(Mandatory)]
+    [Alias('s', 'SubscriptionId')]
+    [string]$Subscription,
+
     [Parameter(Mandatory)]
     [Alias('g')]
     [string]$ResourceGroup,
@@ -67,11 +74,10 @@ if (Test-Path $PrereqScript) {
 
 $AGENT_API_VERSION = '2026-01-01'
 $CHILD_API_VERSION = '2025-05-01-preview'
+$ARM_BASE    = "https://management.azure.com/subscriptions/${Subscription}/resourceGroups/${ResourceGroup}/providers/Microsoft.App/agents/${AgentName}"
 $AzPowerShellPath = Join-Path $PSScriptRoot 'Az-PowerShell.ps1'
 . $AzPowerShellPath
-$AzContext = Get-AzContext -ErrorAction Stop
-$Subscription = $AzContext.Subscription.Id
-$ARM_BASE    = "https://management.azure.com/subscriptions/${Subscription}/resourceGroups/${ResourceGroup}/providers/Microsoft.App/agents/${AgentName}"
+$AzContext = Get-RequiredAzContext -SubscriptionId $Subscription
 
 # ─────────────────────────── Check if agent exists ───────────────────────────
 

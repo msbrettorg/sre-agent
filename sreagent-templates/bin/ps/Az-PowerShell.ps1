@@ -1,5 +1,25 @@
 # Shared Az PowerShell authentication and REST helpers.
 
+function Get-RequiredAzContext {
+    param([Parameter(Mandatory)][string]$SubscriptionId)
+
+    $contexts = @(
+        Get-AzContext -ListAvailable |
+            Where-Object { $_.Subscription.Id -eq $SubscriptionId }
+    )
+    if ($contexts.Count -eq 0) {
+        throw "No Az PowerShell context found for subscription $SubscriptionId. Run Connect-AzAccount first."
+    }
+
+    $tenantIds = @($contexts | ForEach-Object { $_.Tenant.Id } | Sort-Object -Unique)
+    if ($tenantIds.Count -ne 1) {
+        throw "Multiple Az PowerShell tenants contain subscription $SubscriptionId. Remove stale contexts or select one explicitly."
+    }
+
+    Disable-AzContextAutosave -Scope Process | Out-Null
+    return Set-AzContext -Context $contexts[0] -Scope Process -ErrorAction Stop
+}
+
 function ConvertFrom-AzRestContent {
     param([Parameter(Mandatory)][object]$Response)
 

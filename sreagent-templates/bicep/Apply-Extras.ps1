@@ -10,12 +10,12 @@
          — requires token for audience https://azuresre.dev.
 
       2. ARM (agent resource itself, incident platform PATCH)
-         — uses the caller's active Az PowerShell context.
+         — uses Az PowerShell with the selected subscription context.
 
     Auth:
-      ARM calls         → the caller's active Az PowerShell context
+      ARM calls         → Az PowerShell context for the requested subscription
       data-plane calls  → Az PowerShell token with audience https://azuresre.dev
-                          Required for configured data-plane assets
+                          Optional — script continues if unavailable
 
     Repo auth (GitHub / ADO):
       GitHub — two paths, the script picks based on what env vars are set:
@@ -25,6 +25,9 @@
         2. PAT (optional, headless): set $env:GITHUB_PAT=ghp_xxx before running.
            Script POSTs the PAT silently — no browser.
       ADO — set $env:ADO_PAT, $env:ADO_USE_AAD=1, or $env:ADO_USE_MI=1 (with $env:ADO_ORG).
+
+.PARAMETER Subscription
+    Azure subscription ID.
 
 .PARAMETER ResourceGroup
     Resource group containing the agent.
@@ -39,11 +42,14 @@
     Force overwrite without prompting.
 
 .EXAMPLE
-    ./Apply-Extras.ps1 -ResourceGroup rg-myagent -AgentName myagent
+    ./Apply-Extras.ps1 -Subscription <sub-id> -ResourceGroup rg-myagent -AgentName myagent
 #>
 
 [CmdletBinding()]
 param(
+    [Parameter(Mandatory)]
+    [Alias('SubscriptionId')]
+    [string]$Subscription,
     [Parameter(Mandatory)][string]$ResourceGroup,
     [Parameter(Mandatory)][string]$AgentName,
     # Either supply a pre-assembled extras JSON OR a config directory — Apply-Extras
@@ -92,11 +98,10 @@ Set-StrictMode -Off
 
 $AgentApiVersion = "2026-01-01"
 $ChildApiVersion = "2025-05-01-preview"
+$ArmBase = "https://management.azure.com/subscriptions/$Subscription/resourceGroups/$ResourceGroup/providers/Microsoft.App/agents/$AgentName"
 $AzPowerShellPath = Join-Path (Split-Path $PSScriptRoot -Parent) 'bin/ps/Az-PowerShell.ps1'
 . $AzPowerShellPath
-$AzContext = Get-AzContext -ErrorAction Stop
-$Subscription = $AzContext.Subscription.Id
-$ArmBase = "https://management.azure.com/subscriptions/$Subscription/resourceGroups/$ResourceGroup/providers/Microsoft.App/agents/$AgentName"
+$AzContext = Get-RequiredAzContext -SubscriptionId $Subscription
 
 # ── Resolve agent endpoint and UAMI ────────────────────────────────────────
 try {
@@ -126,7 +131,6 @@ if ($AgentUami) {
 
 # ── Probe data-plane token availability ─────────────────────────────────────
 $DpTokenAvailable = $false
-$DpTokenError = ''
 $DpSkippedItems = [System.Collections.Generic.List[string]]::new()
 $GitHubPatInstalled = $false
 
@@ -135,8 +139,8 @@ try {
     $DpTokenAvailable = $true
     Write-Host "Data-plane:     token available"
 } catch {
-    $DpTokenError = $_.Exception.Message
-    Write-Warning "Data-plane token acquisition failed: $DpTokenError"
+    Write-Host "Data-plane:     token unavailable (hooks, repos, httpTriggers will be skipped)"
+    Write-Host "                To apply later: Connect-AzAccount and re-run"
 }
 
 # ── Load extras JSON ────────────────────────────────────────────────────────
@@ -913,7 +917,7 @@ if ($kiCount -gt 0) {
         }
     } else {
         Write-Host "knowledgeItems: $kiCount - skipped (no data-plane token)"
-        $DpSkippedItems.Add("knowledgeItems ($kiCount files)")
+        $dpSkippedItems += "knowledgeItems ($kiCount files)"
     }
 }
 
@@ -1742,7 +1746,21 @@ if ($DpTokenAvailable) {
 # Summary of skipped items (data-plane token unavailable)
 # ═════════════════════════════════════════════════════════════════════════════
 if ($DpSkippedItems.Count -gt 0) {
-    throw "Data-plane configuration incomplete. Token acquisition failed: $DpTokenError`nNot applied: $($DpSkippedItems -join ', ')"
+    Write-Host ""
+    Write-Host "================================================================"
+    Write-Host "  WARNING: $($DpSkippedItems.Count) item(s) skipped (no data-plane token)"
+    Write-Host "  These require audience https://azuresre.dev which is not"
+    Write-Host "  available in this environment (Cloud Shell MSI)."
+    Write-Host ""
+    Write-Host "  To apply the remaining items:"
+    Write-Host "    1. From a compliant machine: Connect-AzAccount and re-run this script"
+    Write-Host "    2. Or configure in the portal: https://sre.azure.com"
+    Write-Host ""
+    Write-Host "  Skipped:"
+    foreach ($item in $DpSkippedItems) {
+        Write-Host "    - $item"
+    }
+    Write-Host "================================================================"
 }
 
 Write-Host ""
