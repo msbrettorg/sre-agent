@@ -3,7 +3,7 @@
 roles:
   - name: FinOps Hub Kusto cluster viewer
     type: adx-principal
-    scope: "https://trey-finops-hub.westus.kusto.windows.net/Hub"
+    scope: "{{finopsHubClusterUri}}"
     role: AllDatabasesViewer
     principal: agent-system
     assignment_name: finops-hub-kusto

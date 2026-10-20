@@ -15,7 +15,7 @@
       "name": "finops-hub-kusto",
       "properties": {
         "dataConnectorType": "Kusto",
-        "dataSource": "https://trey-finops-hub.westus.kusto.windows.net/Hub",
+        "dataSource": "{{finopsHubClusterUri}}",
         "identity": "system"
       }
     },

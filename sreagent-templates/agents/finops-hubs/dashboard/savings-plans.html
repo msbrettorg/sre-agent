@@ -143,7 +143,7 @@ FORM: A precisely scoped Operate surface; fixed existing visual language, no new
       <span>Azure Billing, Cost Management, and FinOps Hub</span>
       <span id="refreshed">Not refreshed</span>
     </div>
-    <p id="scope" class="scope">Resolving the billing profile linked to finops-hub-sre's subscription.</p>
+    <p id="scope" class="scope">Resolving the billing profile linked to the configured subscription.</p>
     <p class="scope-note">Billing-profile scope, not just the SRE Agent subscription. Actual utilization and modeled outcomes are kept separate.</p>
     <nav aria-label="Dashboard sections">
       <a href="#modeler">Modeler</a><a href="#coverage">Coverage</a><a href="#recommendations">Recommendations</a><a href="#current-plans">Current plans</a>
@@ -237,10 +237,10 @@ FORM: A precisely scoped Operate surface; fixed existing visual language, no new
       <summary>Source and calculation</summary>
       <p id="source-profile">Billing profile: not loaded.</p>
       <p>Live path: browser &rarr; localhost bridge &rarr; Azure Billing, Cost Management, and Kusto REST APIs. Azure CLI authentication stays on the server. The browser does not directly invoke the hosted SRE Agent connector.</p>
-      <p>Subscription used to resolve the billing profile: <code>8e9e64d9-d158-4638-a087-f2c60bff9e66</code>. The report covers the linked billing profile, not just that subscription.</p>
+      <p>Subscription used to resolve the billing profile: <code id="source-subscription">not loaded</code>. The report covers the linked billing profile, not just that subscription.</p>
       <p>Actual utilization: <code>Microsoft.CostManagement/benefitUtilizationSummaries</code>, version <code>2025-03-01</code>. Completed UTC days only. The lowest utilization is not a commitment-weighted portfolio average.</p>
       <p>Purchased inventory and metadata: <code>Microsoft.Billing/billingAccounts/savingsPlans</code>, version <code>2024-04-01</code>, filtered to the verified billing profile. Active means Succeeded, benefits started, and not expired. This billing-scoped API uses existing billing access and doesn't require access to the separate Billing Benefits resource.</p>
-      <p>Observed coverage: <code>Costs()</code> and <code>Prices()</code> in <code>ftk-sitecore-eus.eastus.kusto.windows.net / Hub</code>. Match the billing profile, meter, currency, and effective dates. Savings-plan price records determine eligibility. SQL Server license meters belong to database plans, not compute plans. Divide used savings-plan <code>ContractedCost</code> by eligible non-reserved usage <code>ContractedCost</code>; purchases, unused commitment, and Spot are excluded. Billable unmatched or ambiguous meters fail explicitly, not as zero coverage.</p>
+      <p>Observed coverage: <code>Costs()</code> and <code>Prices()</code> in <code id="source-kusto">FinOps Hub</code>. Match the billing profile, meter, currency, and effective dates. Savings-plan price records determine eligibility. SQL Server license meters belong to database plans, not compute plans. Divide used savings-plan <code>ContractedCost</code> by eligible non-reserved usage <code>ContractedCost</code>; purchases, unused commitment, and Spot are excluded. Billable unmatched or ambiguous meters fail explicitly, not as zero coverage.</p>
       <p>Recommendations: <code>Microsoft.CostManagement/benefitRecommendations</code>, version <code>2025-03-01</code>, expanded scenario details, Shared scope, Last30Days, P1Y/P3Y. Current coverage follows the selected plan type and currency.</p>
       <p>Model calculations use exact Azure-evaluated options. Monthly equivalents multiply each observed-window cost by <code>730 / totalHours</code>. They assume the historical usage pattern continues; they are not forecasts or contract quotes. Net savings already include unused commitment, so wastage is not subtracted again.</p>
       <p>Do not add overlapping one-year and three-year recommendations. Compute and database scenarios are separate eligible-usage pools. No monetary savings are inferred from actual utilization. Refresh re-queries live sources; concurrent requests share only work already in flight, not saved results.</p>
@@ -438,6 +438,10 @@ FORM: A precisely scoped Operate surface; fixed existing visual language, no new
       const scopeName = [...new Set([data.scope.accountName, data.scope.profileName].filter(Boolean))].join(" / ");
       byId("scope").textContent = `Billing profile: ${scopeName}`;
       byId("source-profile").textContent = `Billing profile: ${data.scope.billingProfileId}`;
+      byId("source-subscription").textContent = data.scope.subscription || "not loaded";
+      byId("source-kusto").textContent = data.kusto?.cluster
+        ? `${data.kusto.cluster.replace(/^https?:\/\//, "")} / ${data.kusto.database || "Hub"}`
+        : "FinOps Hub";
       byId("refreshed").textContent = `Refreshed ${new Date(data.refreshedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" })}`;
       byId("status").textContent = issues.length ? "Live data loaded with source errors" : "Live plans, coverage, and recommendations loaded";
       byId("status").dataset.state = issues.length ? "error" : "ready";
@@ -450,8 +454,10 @@ FORM: A precisely scoped Operate surface; fixed existing visual language, no new
       byId("status").textContent = "Loading live plans, coverage, and recommendations...";
       byId("status").dataset.state = "loading";
       byId("refreshed").textContent = "Not refreshed";
-      byId("scope").textContent = "Resolving the billing profile linked to finops-hub-sre's subscription.";
+      byId("scope").textContent = "Resolving the billing profile linked to the configured subscription.";
       byId("source-profile").textContent = "Billing profile: not loaded.";
+      byId("source-subscription").textContent = "not loaded";
+      byId("source-kusto").textContent = "FinOps Hub";
       byId("period").textContent = "Loading reporting period...";
       clearMetrics();
       enableControls(false);

@@ -9,29 +9,106 @@ import { coverageQuery, normalizeCoverage } from "./savings-plan-coverage.mjs";
 
 const execFileAsync = promisify(execFile);
 const host = "127.0.0.1";
-const port = 4174;
-const tenant = "91700184-c314-4dc9-bb7e-a411df456a1e";
-const subscription = "8e9e64d9-d158-4638-a087-f2c60bff9e66";
+const port = Number.parseInt(process.env.PORT || "4174", 10);
 const armOrigin = "https://management.azure.com";
-const cluster = "https://ftk-sitecore-eus.eastus.kusto.windows.net";
-const database = "Hub";
 const kustoAudience = "https://api.kusto.windows.net";
 const pagePath = new URL("./savings-plans.html", import.meta.url);
+const connectorsPath = new URL("../connectors.json", import.meta.url);
 const allowedHosts = new Set([`${host}:${port}`, `localhost:${port}`]);
 const allowedOrigins = new Set([...allowedHosts].map((value) => `http://${value}`));
 const cachedTokens = new Map();
 const pendingTokens = new Map();
 let pendingSummary;
+let resolvedConfigPromise;
+
+function parseCliArgs(argv = process.argv.slice(2)) {
+  const result = {};
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (!arg.startsWith("--")) continue;
+    const eqIdx = arg.indexOf("=");
+    if (eqIdx !== -1) {
+      result[arg.slice(2, eqIdx)] = arg.slice(eqIdx + 1);
+    } else if (i + 1 < argv.length && !argv[i + 1].startsWith("--")) {
+      result[arg.slice(2)] = argv[i + 1];
+      i += 1;
+    }
+  }
+  return result;
+}
+
+function parseKustoSource(rawCluster, rawDatabase) {
+  if (!rawCluster || rawCluster.includes("{{") || rawCluster.includes("<")) {
+    return { cluster: "", database: rawDatabase || "Hub" };
+  }
+  const parsed = new URL(rawCluster);
+  const pathDb = parsed.pathname && parsed.pathname !== "/"
+    ? parsed.pathname.replace(/^\/+|\/+$/g, "").split("/")[0]
+    : "";
+  return {
+    cluster: parsed.origin,
+    database: rawDatabase || pathDb || "Hub",
+  };
+}
+
+async function resolveRuntimeConfig() {
+  if (!resolvedConfigPromise) {
+    resolvedConfigPromise = (async () => {
+      const cli = parseCliArgs();
+      let tenant = cli.tenant || process.env.AZURE_TENANT_ID || "";
+      let subscription = cli.subscription || process.env.AZURE_SUBSCRIPTION_ID || "";
+      const rawCluster = cli["kusto-cluster-uri"] || cli.cluster || process.env.KUSTO_CLUSTER_URI || "";
+      const rawDatabase = cli["kusto-database"] || cli.database || process.env.KUSTO_DATABASE || "";
+
+      if (!tenant || !subscription) {
+        try {
+          const { stdout } = await execFileAsync("az", ["account", "show", "--output", "json"], {
+            timeout: 15000,
+          });
+          const account = JSON.parse(stdout);
+          if (!tenant && account?.tenantId) tenant = account.tenantId;
+          if (!subscription && account?.id) subscription = account.id;
+        } catch {
+          // Handled downstream when subscription is required.
+        }
+      }
+
+      let kusto = parseKustoSource(rawCluster, rawDatabase);
+      if (!kusto.cluster) {
+        try {
+          const connectorsRaw = JSON.parse(await readFile(connectorsPath, "utf8"));
+          const kustoConnector = (connectorsRaw?.connectors || []).find(
+            (item) => item?.name === "finops-hub-kusto" || item?.properties?.dataConnectorType === "Kusto",
+          );
+          kusto = parseKustoSource(kustoConnector?.properties?.dataSource || "", rawDatabase);
+        } catch {
+          // Handled downstream when Kusto coverage query runs.
+        }
+      }
+
+      return {
+        tenant,
+        subscription,
+        cluster: kusto.cluster,
+        database: kusto.database || "Hub",
+      };
+    })();
+  }
+  return resolvedConfigPromise;
+}
 
 async function getToken(refresh = false, audience = `${armOrigin}/`) {
   const cached = cachedTokens.get(audience);
   if (!refresh && cached?.expiresAt > Date.now()) return cached.value;
   if (pendingTokens.has(audience)) return pendingTokens.get(audience);
   const pending = (async () => {
-    const { stdout } = await execFileAsync("rtk", [
-      "proxy", "az", "account", "get-access-token", "--tenant", tenant,
+    const { tenant } = await resolveRuntimeConfig();
+    const args = [
+      "account", "get-access-token",
       "--resource", audience, "--query", "accessToken", "--output", "tsv",
-    ]);
+    ];
+    if (tenant) args.splice(2, 0, "--tenant", tenant);
+    const { stdout } = await execFileAsync("az", args, { timeout: 30000 });
     const value = stdout.trim();
     if (!value) throw new Error("Azure CLI returned an empty access token.");
     cachedTokens.set(audience, { value, expiresAt: Date.now() + 5 * 60 * 1000 });
@@ -97,6 +174,10 @@ async function readList(endpoint, initialPage) {
 }
 
 async function readKusto(query, refresh = false) {
+  const { cluster, database } = await resolveRuntimeConfig();
+  if (!cluster) {
+    throw new Error("KUSTO_CLUSTER_URI is required to query FinOps Hub coverage.");
+  }
   const response = await fetch(`${cluster}/v1/rest/query`, {
     method: "POST",
     headers: {
@@ -259,6 +340,10 @@ export function summarizePlans(records, period) {
 }
 
 async function loadSummary() {
+  const { tenant, subscription, cluster, database } = await resolveRuntimeConfig();
+  if (!subscription) {
+    throw new Error("AZURE_SUBSCRIPTION_ID is required to resolve the billing profile.");
+  }
   const billing = await readAzure(new URL(
     `/subscriptions/${subscription}/providers/Microsoft.Billing/billingProperty/default?api-version=2024-04-01`,
     armOrigin,
@@ -338,6 +423,7 @@ const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url, `http://${host}:${port}`);
     if (url.pathname === "/api/health") {
+      const { tenant, subscription } = await resolveRuntimeConfig();
       return send(response, 200, { source: "live", tenant, subscription, scope: "linked billing profile" });
     }
     if (url.pathname === "/api/savings-plans" && !url.search) {
@@ -363,8 +449,9 @@ const server = createServer(async (request, response) => {
 });
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  server.listen(port, host, () => {
+  server.listen(port, host, async () => {
+    const { tenant, subscription, cluster, database } = await resolveRuntimeConfig();
     console.log(`Savings plans: http://${host}:${port}/`);
-    console.log(`Subscription: ${subscription}; tenant: ${tenant}`);
+    console.log(`Subscription: ${subscription || "(unresolved)"}; tenant: ${tenant || "(default)"}; Kusto: ${cluster ? `${cluster}/${database}` : "(unconfigured)"}`);
   });
 }

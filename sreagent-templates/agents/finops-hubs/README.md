@@ -27,20 +27,12 @@ guidance doesn't add new connectors, integrations, or networking infrastructure.
 
 ## Quick Start
 
-Generate an agent configuration:
-
 ```powershell
-./bin/ps/New-Agent.ps1 -Recipe finops-hubs -NonInteractive `
-  -Set @{ agentName = 'finops-hubs-sre'; resourceGroup = 'finops-hubs-sre'
-          location = 'eastus2'; targetRGs = 'finops-hubs-demo'
-          finopsHubClusterUri = 'https://example.westus.kusto.windows.net/Hub' } `
-  -Output agents/finops-hubs/
-```
-
-Deploy the generated configuration:
-
-```powershell
-./bin/ps/Deploy-Agent.ps1 -InputPath agents/finops-hubs/
+./bin/ps/Deploy-Agent.ps1 -InputPath agents/finops-hubs/ `
+  -ResourceGroup 'finops-hubs-sre' `
+  -Location 'eastus2' `
+  -TargetResourceGroups @('<target-resource-group>') `
+  -KustoClusterUrl 'https://<cluster>.<region>.kusto.windows.net'
 ```
 
 ## Post-deployment setup

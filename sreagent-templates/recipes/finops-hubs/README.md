@@ -24,7 +24,7 @@ Generate an agent configuration:
 ```powershell
 ./bin/ps/New-Agent.ps1 -Recipe finops-hubs -NonInteractive `
   -Set @{ agentName = 'finops-hubs-sre'; resourceGroup = 'finops-hubs-sre'
-          location = 'eastus2'; targetRGs = 'finops-hubs-demo'
+          location = 'eastus2'; targetRGs = '<target-resource-group>'
           finopsHubClusterUri = 'https://example.westus.kusto.windows.net/Hub' } `
   -Output agents/finops-hubs/
 ```
