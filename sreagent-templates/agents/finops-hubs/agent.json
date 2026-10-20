@@ -1,8 +1,8 @@
 {
   "_scenario": "finops-hubs",
   "identity": {
-    "agentName": "finops-hubs-sre",
-    "resourceGroup": "finops-hubs-sre",
+    "agentName": "finops-hubs-sre-eval",
+    "resourceGroup": "finops-hubs-sre-eval",
     "subscription": "64e355d7-997c-491d-b0c1-8414dccfcf42",
     "location": "eastus2",
     "targetResourceGroups": [

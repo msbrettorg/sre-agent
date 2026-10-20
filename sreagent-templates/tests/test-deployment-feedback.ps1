@@ -122,6 +122,38 @@ foreach ($script in $scripts) {
     if ($forbidden.Count) { throw "${script}: scripts must not manage or enumerate caller contexts." }
 }
 
+$assemblyPath = Join-Path $PSScriptRoot '../bicep/Assemble-Agent.ps1'
+$assemblyAst = [System.Management.Automation.Language.Parser]::ParseFile($assemblyPath, [ref]$null, [ref]$null)
+$collector = $assemblyAst.Find({
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Collect-Config'
+}, $true)
+. ([scriptblock]::Create($collector.Extent.Text))
+. (Join-Path $PSScriptRoot '../bin/ps/Invoke-Jq.ps1')
+$ConfigDir = Join-Path ([IO.Path]::GetTempPath()) "assembly-feedback-$([guid]::NewGuid())"
+try {
+    $fixtureDir = Join-Path $ConfigDir 'config/fixture'
+    $null = New-Item -ItemType Directory -Path $fixtureDir -Force
+    Set-Content (Join-Path $fixtureDir 'entry.json') '{"metadata":{"name":"fixture"}}'
+    $items = @(Collect-Config -Subdir fixture | ConvertFrom-Json)
+    if ($items.Count -ne 1 -or $items[0].metadata.name -ne 'fixture') {
+        throw 'JSON configuration assets must not be silently omitted.'
+    }
+    function Invoke-FailingYamlConverter {
+        $global:LASTEXITCODE = 1
+        'fixture YAML conversion failure'
+    }
+    $Python = 'Invoke-FailingYamlConverter'
+    Set-Content (Join-Path $fixtureDir 'entry.yaml') 'metadata: ['
+    $failure = $null
+    try { $null = Collect-Config -Subdir fixture } catch { $failure = $_.Exception.Message }
+    if (-not $failure -or $failure -notlike '*entry.yaml*fixture YAML conversion failure*') {
+        throw 'YAML conversion errors must name the file, retain the diagnostic, and stop assembly.'
+    }
+} finally {
+    Remove-Item -LiteralPath $ConfigDir -Recurse -Force
+}
+
 $deploy = Get-Content (Join-Path $PSScriptRoot '../bin/ps/Deploy-Agent.ps1') -Raw
 if ($deploy -match 'identity\.subscription|RequestedSubscriptionId') {
     throw 'Deployment must use the active context, not subscription metadata from agent.json.'

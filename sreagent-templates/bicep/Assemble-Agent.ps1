@@ -175,24 +175,29 @@ print(json.dumps(data))
             try {
                 $pyTmp = [System.IO.Path]::GetTempFileName() + '.py'
                 Set-Content -Path $pyTmp -Value $pyYaml -Encoding UTF8
-                $item = & $Python $pyTmp $f.FullName 2>$null
+                $item = & $Python $pyTmp $f.FullName 2>&1
                 Remove-Item $pyTmp -Force -ErrorAction SilentlyContinue
-                if ($LASTEXITCODE -ne 0 -or -not $item) { continue }
+                if ($LASTEXITCODE -ne 0 -or -not $item) {
+                    throw "YAML conversion failed: $($item -join [Environment]::NewLine)"
+                }
                 # Use --slurpfile to safely pass JSON without --argjson quoting issues
                 $tmpItem = [System.IO.Path]::GetTempFileName()
                 Set-Content -Path $tmpItem -Value $item -NoNewline -Encoding UTF8
                 $items = $items | Invoke-Jq -Compact -Filter '. + [$i[0]]' -ExtraArgs @('--slurpfile', 'i', $tmpItem)
                 Remove-Item $tmpItem -ErrorAction SilentlyContinue
-            } catch { continue }
+            } catch {
+                throw "Failed to assemble '$($f.FullName)': $($_.Exception.Message)"
+            }
         }
 
         # Read JSON files (backward compat)
         foreach ($f in (Get-ChildItem $full -File -Filter '*.json' -ErrorAction SilentlyContinue)) {
             try {
-                $item = Get-Content $f.FullName -Raw
-                $items = @($items, $item) -join "`n" | Invoke-Jq -Compact -Slurp -Filter 'add // []'
-                if ($LASTEXITCODE -ne 0) { continue }
-            } catch { continue }
+                $items = $items | Invoke-Jq -Compact -Filter '. + [$i[0]]' -ExtraArgs @('--slurpfile', 'i', $f.FullName)
+                if ($LASTEXITCODE -ne 0) { throw 'JSON conversion failed.' }
+            } catch {
+                throw "Failed to assemble '$($f.FullName)': $($_.Exception.Message)"
+            }
         }
 
         $result = @($result, $items) -join "`n" | Invoke-Jq -Compact -Slurp -Filter 'add // []'
