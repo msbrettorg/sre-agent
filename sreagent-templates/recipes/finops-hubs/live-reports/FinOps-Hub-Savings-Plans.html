@@ -297,29 +297,31 @@
       row.append(cell);
       byId(target).replaceChildren(row);
     }
-    function benefitRecords(raw) {
+    function unwrapToolResult(raw, source) {
       let payload = raw;
       for (let depth = 0; depth < 8; depth += 1) {
         if (typeof payload === "string") {
           payload = JSON.parse(payload);
           continue;
         }
-        if (payload?.isError || payload?.error || (typeof payload?.status === "number" && payload.status >= 400)) {
-          throw new Error("Azure benefit tool returned an error: " + JSON.stringify(payload));
-        }
-        if (Array.isArray(payload?.value)) {
-          if (payload.nextLink) throw new Error("Azure returned a partial benefit response with more pages; complete data is unavailable.");
-          return payload.value;
+        if (payload?.isError || payload?.error || payload?.Exceptions?.length || (typeof payload?.status === "number" && payload.status >= 400)) {
+          throw new Error(`${source} tool returned an error: ` + JSON.stringify(payload));
         }
         if (payload?.structuredContent !== undefined) payload = payload.structuredContent;
         else if (payload?.result !== undefined) payload = payload.result;
         else if (Array.isArray(payload?.content)) {
           const text = payload.content.find((entry) => entry?.type === "text" && typeof entry.text === "string");
-          if (!text) throw new Error("Azure benefit response has no text result.");
+          if (!text) throw new Error(`${source} response has no text result.`);
           payload = text.text;
-        } else break;
+        } else return payload;
       }
-      throw new Error("Azure benefit response is missing result.value.");
+      throw new Error(`${source} response exceeds the supported nesting depth.`);
+    }
+    function benefitRecords(raw) {
+      const payload = unwrapToolResult(raw, "Azure benefit");
+      if (!Array.isArray(payload?.value)) throw new Error("Azure benefit response is missing result.value.");
+      if (payload.nextLink) throw new Error("Azure returned a partial benefit response with more pages; complete data is unavailable.");
+      return payload.value;
     }
     function numeric(value, name, minimum = 0) {
       if (typeof value !== "number" || !Number.isFinite(value) || value < minimum) {
@@ -566,11 +568,7 @@
       byId("plans").replaceChildren(row);
     }
     function parseToolResult(raw) {
-      let payload = raw;
-      for (let i = 0; i < 2 && typeof payload === "string"; i += 1) payload = JSON.parse(payload);
-      if (payload?.isError || payload?.error || payload?.Exceptions?.length) {
-        throw new Error("The Kusto tool reported a failed or incomplete query.");
-      }
+      const payload = unwrapToolResult(raw, "Kusto");
       const items = payload?.results?.items ?? payload?.items;
       if (!Array.isArray(items)) throw new Error("The Kusto tool did not return the expected result table.");
       if (!items.length) return [];
