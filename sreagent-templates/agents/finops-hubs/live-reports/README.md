@@ -5,9 +5,9 @@ local preview bridge:
 
 - `FinOps-Hub-MTD-KPI-Cockpit.html` is the portable month-to-date KPI cockpit
   Live Report uploaded to Azure SRE Agent.
-- `FinOps-Hub-Savings-Plans.html` is the portable savings-plan utilization,
-  VM vCPU-hour coverage, effective-cost spend share, and Azure-evaluated
-  decision comparison Live Report.
+- `FinOps-Hub-Savings-Plans.html` is the portable reservation and savings-plan
+  dashboard: all-service observed utilization, service spend share, native-meter
+  reservation usage, VM vCPU-hour coverage, and source-backed recommendations.
   Observed costs do not establish purchased-plan inventory.
 - `build-local.mjs` generates ignored `.local.html` copies of both reports with
   the destination Kusto configuration and browser bridge.
@@ -19,6 +19,54 @@ local preview bridge:
 
 The local preview uses live FinOps Hub data. It does not use fixtures, mocks, or
 synthetic query results.
+
+### Reservations across all services
+
+Observed reservations use `CommitmentDiscountType == "Reservation"` without a
+service or category whitelist. Summary and Observed utilization distinguish
+reservation and savings-plan IDs and show used, unused, total, and waste costs
+over 7 and 30 completed UTC days. Cost utilization is explicitly cost-weighted,
+not purchased-capacity or hour utilization. Only negative floating-point
+residuals within `0.000000001` billing-currency units of zero are normalized;
+larger negative costs remain invalid.
+
+Coverage includes all-service reservation and savings-plan `EffectiveCost`
+shares over the same non-Spot usage-spend denominator, separated by service,
+account, profile, and currency. This does not identify reservation-eligible
+spend or assert a global duplicate audit.
+
+Reservation usage is discovered dynamically from observed reservation meters.
+Each row keeps its SKU, meter, region, consumed/pricing units, pricing block,
+license type, and billing scope. Fabric meter hours are not VM vCPU-hours.
+Missing identities, invalid or mismatched quantities, or size-flex normalization
+requirements make the affected meter result unavailable. Unlike meter units
+are never summed into an all-reservation-hours percentage.
+
+Reservation recommendations use the Hub's native `Microsoft-AdvisorCost`
+snapshots with the `Reservations` subcategory, across all returned reserved
+resource types. Rows retain subscription, SKU, region, quantity, term, lookback,
+annual-savings estimate, and recommendation date. Alternative terms and lookbacks
+are not additive. These records do not supply billing-profile attribution or
+evaluated purchase/baseline costs, so they are not forced into the hourly
+savings-plan modeler. The native Azure daily utilization panel remains explicitly
+savings-plan-only; all-service reservation cost utilization comes from the Hub.
+
+The existing filename, `/savings-plans` route, and three approved tools remain
+unchanged. No new connector or Azure write operation is required.
+
+### Recommendation navigation
+
+Recommendations separates Reservations from Savings plans. Reservation services
+are discovered from the returned resource types, including types not known in
+advance. Choose a service, then optionally filter by term and usage lookback.
+Rows stay ordered by subscription scope, currency, SKU, region, and term; all
+source options remain accessible. Clear filters restores the selected service's
+full list. Counts describe displayed options, not additive purchases or savings.
+
+Savings-plan comparisons separate Compute and Database without changing their
+evaluated amounts or original modeler indices. Each Explore action still opens
+that exact Azure-evaluated option. Navigation and filtering operate on already
+loaded results, without new tool calls or changes to the source queries.
 
 ### VM usage coverage and spend share
 

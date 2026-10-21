@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Organized commitment recommendations by benefit type and service, with
+  reservation term/lookback filters and separate Compute/Database savings-plan
+  comparisons. Preserved source queries, financial amounts, and exact modeler
+  Explore actions.
+- Expanded the commitment dashboard to observed reservations across all
+  services, with separate benefit counts, cost utilization, service spend
+  shares, exact-meter native usage, and Azure Advisor reservation recommendations.
+  Preserved the VM vCPU-hour proxy and savings-plan-only evaluated modeler.
 - Labeled VM usage coverage in vCPU-hours and added separate reservation and
   savings-plan effective-cost amounts and spend-share percentages for the same
   cohort. Both sides of spend share use `EffectiveCost`; Azure modeled coverage
