@@ -8,7 +8,16 @@ import { fileURLToPath } from "node:url";
 
 const execFileAsync = promisify(execFile);
 const root = dirname(fileURLToPath(import.meta.url));
-const reportPath = join(root, "FinOps-Hub-MTD-KPI-Cockpit.local.html");
+const cockpitReportPath = join(root, "FinOps-Hub-MTD-KPI-Cockpit.local.html");
+const savingsPlansReportPath = join(root, "FinOps-Hub-Savings-Plans.local.html");
+const reportRoutes = new Map([
+  ["/", cockpitReportPath],
+  ["/report.local.html", cockpitReportPath],
+  ["/FinOps-Hub-MTD-KPI-Cockpit.local.html", cockpitReportPath],
+  ["/savings-plans", savingsPlansReportPath],
+  ["/savings-plans.local.html", savingsPlansReportPath],
+  ["/FinOps-Hub-Savings-Plans.local.html", savingsPlansReportPath],
+]);
 const host = "127.0.0.1";
 const port = Number.parseInt(process.env.PORT || "4174", 10);
 const tenant = process.env.AZURE_TENANT_ID || "";
@@ -252,14 +261,14 @@ async function handleQuery(request, response) {
   }
 }
 
-async function handleReport(request, response) {
+async function handleReport(request, response, targetPath) {
   if (request.method !== "GET" && request.method !== "HEAD") {
     response.writeHead(405, { Allow: "GET, HEAD" });
     return response.end();
   }
 
   try {
-    const fileStat = await stat(reportPath);
+    const fileStat = await stat(targetPath);
     if (!fileStat.isFile()) throw new Error("Local report is not a file.");
     response.writeHead(200, {
       "Cache-Control": "no-store",
@@ -268,7 +277,7 @@ async function handleReport(request, response) {
       "X-Content-Type-Options": "nosniff",
     });
     if (request.method === "HEAD") return response.end();
-    return createReadStream(reportPath).pipe(response);
+    return createReadStream(targetPath).pipe(response);
   } catch {
     return sendJson(response, 404, {
       error: "Run node build-local.mjs before starting the local server.",
@@ -300,8 +309,8 @@ const server = createServer(async (request, response) => {
   if (url.pathname === "/api/kusto/query") {
     return handleQuery(request, response);
   }
-  if (url.pathname === "/" || url.pathname === "/report.local.html") {
-    return handleReport(request, response);
+  if (reportRoutes.has(url.pathname)) {
+    return handleReport(request, response, reportRoutes.get(url.pathname));
   }
 
   response.writeHead(404);
@@ -309,7 +318,8 @@ const server = createServer(async (request, response) => {
 });
 
 server.listen(port, host, () => {
-  console.log(`Live Report: http://${host}:${port}/`);
-  console.log(`Kusto target: ${clusterUri}/${database}`);
-  console.log(`Tenant: ${tenant || "Azure CLI default"}`);
+  console.log(`MTD KPI Cockpit: http://${host}:${port}/`);
+  console.log(`Savings Plans:   http://${host}:${port}/savings-plans`);
+  console.log(`Kusto target:    ${clusterUri}/${database}`);
+  console.log(`Tenant:          ${tenant || "Azure CLI default"}`);
 });

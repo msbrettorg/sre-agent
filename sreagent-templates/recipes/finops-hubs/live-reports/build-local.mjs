@@ -4,8 +4,16 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(fileURLToPath(import.meta.url));
-const sourcePath = join(root, "FinOps-Hub-MTD-KPI-Cockpit.html");
-const outputPath = join(root, "FinOps-Hub-MTD-KPI-Cockpit.local.html");
+const reports = [
+  {
+    source: join(root, "FinOps-Hub-MTD-KPI-Cockpit.html"),
+    output: join(root, "FinOps-Hub-MTD-KPI-Cockpit.local.html"),
+  },
+  {
+    source: join(root, "FinOps-Hub-Savings-Plans.html"),
+    output: join(root, "FinOps-Hub-Savings-Plans.local.html"),
+  },
+];
 const bridgePath = join(root, "live-sreagent.js");
 const clusterPlaceholder = "REPLACE_WITH_FINOPS_HUB_CLUSTER_URI";
 const applicationScriptMarker =
@@ -43,40 +51,38 @@ if (!/^[A-Za-z0-9_.-]+$/.test(database)) {
   throw new Error("KUSTO_DATABASE contains unsupported characters.");
 }
 
-const [rawSourceHtml, bridgeScript] = await Promise.all([
-  readFile(sourcePath, "utf8"),
-  readFile(bridgePath, "utf8"),
-]);
-
-// The portable report may be stored with CRLF endings depending on how it was
-// exported or checked out. Normalize to LF so the literal markers above match.
-const sourceHtml = rawSourceHtml.replaceAll("\r\n", "\n");
+const bridgeScript = await readFile(bridgePath, "utf8");
 if (bridgeScript.includes("</script>")) {
   throw new Error("The local bridge contains an unsafe closing script tag.");
 }
 
-let localHtml = replaceOnce(
-  sourceHtml,
-  clusterPlaceholder,
-  clusterUri,
-  "cluster placeholder",
-);
-localHtml = replaceOnce(
-  localHtml,
-  "const DATABASE = 'Hub';",
-  `const DATABASE = ${JSON.stringify(database)};`,
-  "database constant",
-);
-localHtml = replaceOnce(
-  localHtml,
-  applicationScriptMarker,
-  `<script nonce="{REPORT_NONCE}">\n${bridgeScript}\n</script>\n\n${applicationScriptMarker}`,
-  "application script marker",
-);
-localHtml = localHtml.replaceAll(
-  "{REPORT_NONCE}",
-  randomBytes(18).toString("base64"),
-);
+for (const report of reports) {
+  const rawSourceHtml = await readFile(report.source, "utf8");
+  const sourceHtml = rawSourceHtml.replaceAll("\r\n", "\n");
 
-await writeFile(outputPath, localHtml);
-console.log(`Generated ${outputPath}`);
+  let localHtml = replaceOnce(
+    sourceHtml,
+    clusterPlaceholder,
+    clusterUri,
+    `cluster placeholder in ${report.source}`,
+  );
+  localHtml = replaceOnce(
+    localHtml,
+    "const DATABASE = 'Hub';",
+    `const DATABASE = ${JSON.stringify(database)};`,
+    `database constant in ${report.source}`,
+  );
+  localHtml = replaceOnce(
+    localHtml,
+    applicationScriptMarker,
+    `<script nonce="{REPORT_NONCE}">\n${bridgeScript}\n</script>\n\n${applicationScriptMarker}`,
+    `application script marker in ${report.source}`,
+  );
+  localHtml = localHtml.replaceAll(
+    "{REPORT_NONCE}",
+    randomBytes(18).toString("base64"),
+  );
+
+  await writeFile(report.output, localHtml);
+  console.log(`Generated ${report.output}`);
+}

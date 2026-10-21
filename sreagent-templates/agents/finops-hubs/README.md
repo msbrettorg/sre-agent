@@ -57,10 +57,11 @@ the ARM MCP endpoint as its data source and requests an `AzureARM` token for
 `https://mcp.management.azure.com/.default`. It does not require interactive user
 authentication or stored credentials.
 
-### Set up the FinOps Hub Live Report
+### Set up the FinOps Hub Live Reports
 
-See the [Live Report README](live-reports/README.md) for preparation, manual
-upload, and local live-data preview instructions.
+See the [Live Reports README](live-reports/README.md) for preparation, manual
+upload, and local live-data preview instructions for both
+`FinOps-Hub-MTD-KPI-Cockpit.html` and `FinOps-Hub-Savings-Plans.html`.
 
 ## Parameters
 

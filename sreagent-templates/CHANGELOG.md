@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documented FinOps Hubs deployment output, token recovery, existing-agent
   preservation limits, the private-only Kusto connector limitation, and
   the minimal-agent alternative and scheduled-task limitations without a Hub.
-- Added the local-only savings plans dashboard without changing the hosted Live Report.
+- Added the portable `FinOps-Hub-Savings-Plans.html` Live Report and local preview support in `live-reports/`.
 - Added 15 live-tested FinOps Hub `Quota()` Kusto tools for quota usage,
   headroom, SKU restrictions, availability-zone mappings, and capacity
   inventory, assigned only to the FinOps Hub database specialist.

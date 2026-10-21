@@ -1,13 +1,16 @@
-# FinOps Hub MTD KPI Cockpit
+# FinOps Hub Live Reports
 
-This folder contains the FinOps Hub Live Report and a dependency-free local
-preview bridge:
+This folder contains the portable FinOps Hub Live Reports and a dependency-free
+local preview bridge:
 
-- `FinOps-Hub-MTD-KPI-Cockpit.html` is the portable Live Report uploaded to
-  Azure SRE Agent.
-- `build-local.mjs` generates an ignored local copy with the destination Kusto
-  configuration and browser bridge.
-- `serve-local.mjs` serves the local copy and proxies its Kusto queries.
+- `FinOps-Hub-MTD-KPI-Cockpit.html` is the portable month-to-date KPI cockpit
+  Live Report uploaded to Azure SRE Agent.
+- `FinOps-Hub-Savings-Plans.html` is the portable Compute Savings Plans
+  inventory, 30-day Kusto coverage, and interactive purchase simulator Live
+  Report uploaded to Azure SRE Agent.
+- `build-local.mjs` generates ignored `.local.html` copies of both reports with
+  the destination Kusto configuration and browser bridge.
+- `serve-local.mjs` serves the local copies and proxies their Kusto queries.
 - `live-sreagent.js` implements the hosted `window.sreagent` browser contract
   for local development.
 
@@ -16,19 +19,20 @@ synthetic query results.
 
 ## Upload to Azure SRE Agent
 
-The report requires the destination agent to expose and authorize the
+Both reports require the destination agent to expose and authorize the
 `system-mcp-kusto_kusto_query` tool.
 
-1. Make a working copy of `FinOps-Hub-MTD-KPI-Cockpit.html`.
+1. Make a working copy of `FinOps-Hub-MTD-KPI-Cockpit.html` or
+   `FinOps-Hub-Savings-Plans.html`.
 2. In the copy, replace `REPLACE_WITH_FINOPS_HUB_CLUSTER_URI` with the FinOps
    Hub Azure Data Explorer cluster origin, such as
    `https://example.westus.kusto.windows.net`.
-3. Do not append `/Hub`. The report already sets the database to `Hub`.
+3. Do not append `/Hub`. Each report already sets the database to `Hub`.
 4. Upload the prepared copy to the deployed agent as a Live Report.
 
 The placeholder is intentionally invalid so an unconfigured report fails
 visibly instead of querying the source environment. Live Report publication is
-a manual post-deployment step; `new-agent.sh` and `deploy.sh` do not publish it.
+a manual post-deployment step; `Deploy-Agent.ps1` does not publish it.
 
 ## Run locally
 
@@ -44,7 +48,7 @@ Sign in to the tenant that contains the FinOps Hub:
 az login --tenant <tenant-id>
 ```
 
-From this directory, configure the destination and generate the local report:
+From this directory, configure the destination and generate the local reports:
 
 ```bash
 export AZURE_TENANT_ID="<tenant-id>"
@@ -56,10 +60,14 @@ node build-local.mjs
 node serve-local.mjs
 ```
 
-Open <http://127.0.0.1:4174/>. The generated
-`FinOps-Hub-MTD-KPI-Cockpit.local.html` is ignored by Git.
+Open:
 
-Run `node build-local.mjs` again after changing the source report or local
+- <http://127.0.0.1:4174/> for `FinOps-Hub-MTD-KPI-Cockpit.local.html`
+- <http://127.0.0.1:4174/savings-plans> for `FinOps-Hub-Savings-Plans.local.html`
+
+The generated `*.local.html` files are ignored by Git.
+
+Run `node build-local.mjs` again after changing a source report or local
 configuration. Restart `serve-local.mjs` after changing an environment
 variable.
 
