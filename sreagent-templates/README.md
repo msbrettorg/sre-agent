@@ -1,69 +1,56 @@
 # Awesome Azure SRE Agent Recipes
 
-Production-ready recipes to deploy SRE Agents as code. Pick a recipe, run two commands, deploy.
+Recipes and configuration assets for Azure SRE Agent. The current native
+PowerShell deployer provisions ARM infrastructure and connectors, not the full
+recipe's data-plane assets.
 
 ## Prerequisites
 
-[Azure Cloud Shell](https://shell.azure.com) has everything pre-installed — no setup needed.
+- PowerShell 7+
+- `Az.Accounts` and `Az.Resources` PowerShell modules
+- Bicep CLI on `PATH` for deployment of `bicep/main.bicep`
+- An existing authenticated Az PowerShell context for the deployment subscription
+- Permission to deploy resources and create the template's role assignments
+- Existing workload resource groups in the deployment subscription
 
-For local use, run the install script to check and install all required tools:
-
-```bash
-# macOS / Linux
-./bin/install-prerequisites.sh
-
-# Windows (PowerShell 7+)
-.\bin\ps\Install-Prerequisites.ps1
-```
-
-To include optional tools (Terraform, azd):
-```bash
-./bin/install-prerequisites.sh --all          # everything
-./bin/install-prerequisites.sh --terraform    # just Terraform
-./bin/install-prerequisites.sh --check        # check only, no install
-```
-
-<details>
-<summary>Manual install (if you prefer)</summary>
-
-| Tool | Install |
-|---|---|
-| Azure CLI (`az`) | `brew install azure-cli` or [install guide](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) |
-| `jq` | `brew install jq` / `apt install jq` / `winget install jqlang.jq` |
-| Python 3 + PyYAML | `brew install python3 && pip3 install pyyaml` |
-| `curl` | Pre-installed on macOS/Linux |
-| Terraform (optional) | `brew install hashicorp/tap/terraform` or [install guide](https://developer.hashicorp.com/terraform/install) |
-| azd (optional) | `brew install azd` or [install guide](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd) |
-
-</details>
+This path doesn't require Azure CLI, jq, Python, or PyYAML. The former
+prerequisite installer and recipe-generation scripts aren't present.
 
 ## Quick Start
 
-```bash
-git clone https://github.com/microsoft/sre-agent.git
-cd sre-agent/sreagent-templates
+Use a checkout containing `sreagent-templates/bin/ps/Deploy-Agent.ps1`.
+Run inside **PowerShell 7+**, starting at the repository root. Replace every
+placeholder with your own values.
 
-# Step 0: Install prerequisites (skips already-installed tools)
-./bin/install-prerequisites.sh
+```powershell
+Set-Location sreagent-templates
 
-# Create agent config from a recipe
-./bin/new-agent.sh --recipe azmon-lawappinsights --non-interactive \
-  --set agentName=my-agent \
-  --set resourceGroup=rg-my-agent \
-  --set location=swedencentral \
-  --set targetRGs=rg-my-workload \
-  -o my-agent/
-
-# Deploy (~3 min)
-./bin/deploy.sh my-agent/
+./bin/ps/Deploy-Agent.ps1 -InputPath agents/finops-hubs/ `
+  -SubscriptionId '<subscription-id>' `
+  -AgentName '<agent-name>' `
+  -ResourceGroup '<agent-resource-group>' `
+  -Location 'eastus2' `
+  -TargetResourceGroups @('<target-resource-group-1>', '<target-resource-group-2>') `
+  -KustoClusterUrl 'https://<cluster>.<region>.kusto.windows.net' `
+  -KustoDatabase 'Hub'
 ```
 
-> **Cloud Shell**: Core deployment works with Cloud Shell's built-in auth. Some data-plane items (hooks, repos) require `az login --scope "https://azuresre.dev/.default"` first, or can be configured later in the [portal](https://sre.azure.com).
+This uses the checked-in FinOps Hubs config, not an unresolved recipe directory.
+`-TargetResourceGroups` is a PowerShell string array, not one comma-separated
+string. Invoke the script inside PowerShell rather than passing arrays through
+`pwsh -File` from Bash.
+
+`-SubscriptionId` uses an already available Az context without signing in or
+changing the saved context. Without it, the script uses
+`agent.json.identity.subscription` when set, otherwise the current context.
+See the [FinOps Hubs quick start](agents/finops-hubs/README.md#quick-start)
+and [parameter reference](agents/finops-hubs/README.md#parameters).
 
 ## Recipes
 
 | Recipe | Platform | One-line |
 |---|---|---|
+| [finops-hubs](recipes/finops-hubs/) | FinOps Hubs | Hub-backed cost analytics and FinOps configuration assets; current deployment is ARM-only |
 | [azmon-lawappinsights](recipes/azmon-lawappinsights/) | Azure Monitor | Alert response with AppInsights + Log Analytics, skills, subagents, scheduled tasks |
 | [pagerduty-law-vmcosmos](recipes/pagerduty-law-vmcosmos/) | PagerDuty | VM + CosmosDB + HTTP error investigation with knowledge files and skills |
 | [dynatrace-mcp](recipes/dynatrace-mcp/) | Dynatrace | Dynatrace MCP connector for investigating application errors |
@@ -77,20 +64,14 @@ Each recipe README has the full parameter list, example values, and post-deploy 
 
 | Command | Purpose |
 |---|---|
-| `new-agent.sh --recipe <name> --set key=val -o dir/` | Create agent config from recipe |
-| `deploy.sh dir/` | Deploy (Bicep + data-plane, ~3 min) |
-| `deploy.sh dir/ --dry-run` | Assemble only, no ARM call |
-| `deploy.sh dir/ --what-if` | ARM validation without deploying |
-| `deploy.sh dir/ --force` | Redeploy even if no changes detected |
-| `deploy-tf.sh dir/` | Deploy via Terraform |
-| `clone-agent.sh --from-agent <name> ...` | Clone: export → validate → deploy |
-| `export-agent.sh --set agentName=clone -o dir/` | Export a live agent to config dir |
-| `diff-agent.sh $SUB $RG $AGENT dir/` | Compare config vs live agent |
-| `verify-agent.sh $SUB $RG $AGENT --expected dir/` | 22-point verification |
+| `./bin/ps/Deploy-Agent.ps1 -InputPath <config-directory>` | Deploy ARM infrastructure and connectors from `agent.json` and `connectors.json` |
+
+The current script has no dry-run, what-if, force, export, clone, diff, or
+verification mode. The former lifecycle helpers aren't in this checkout.
 
 ## What Gets Deployed
 
-Every recipe deploys these resources (regardless of backend):
+The native PowerShell path deploys these resources through `bicep/main.bicep`:
 
 | Resource | Description |
 |---|---|
@@ -100,135 +81,50 @@ Every recipe deploys these resources (regardless of backend):
 | Application Insights | Agent monitoring (created unless you supply one) |
 | SRE Agent | The agent itself |
 | Connectors | Data sources (App Insights, LAW, PagerDuty, Dynatrace, etc.) |
-| Skills, Subagents, Tools, Common Prompts | Agent capabilities from the recipe |
-| RBAC role assignments | Reader, Log Analytics Reader, Monitoring Reader on target RGs |
+| RBAC role assignments | Reader and Log Analytics Reader on target RGs; Contributor for High access; Monitoring Reader on the agent RG |
+
+Skills, subagents, tools, common prompts, scheduled tasks, plugins, knowledge,
+and tool policies aren't installed by the current script. It doesn't invoke
+an assembler, `Apply-Extras.ps1`, or a verifier; those helpers aren't present.
+ARM success isn't full recipe readiness or evidence that connector queries work.
 
 ## Deploy Backends
 
-The same config directory works with any backend:
+The supported entry point in this checkout is native PowerShell with Bicep:
 
 | Backend | Command | Best for |
 |---|---|---|
-| **Bicep** (default) | `deploy.sh dir/` | Azure-native, Cloud Shell, CI/CD |
-| **Terraform** | `deploy-tf.sh dir/` | Multi-cloud teams, TF state management |
-| **azd** | `azd up` | Azure Developer CLI, `azd` template ecosystem |
-| **PowerShell** | `Deploy-Agent.ps1 -InputPath dir/` | Windows, Cloud Shell (PS) |
+| **PowerShell + Bicep** | `./bin/ps/Deploy-Agent.ps1 -InputPath <config-directory>` | PowerShell 7+ with existing Az authentication |
 
-All backends run the same steps: assemble config → deploy infra → apply extras (data-plane).
+The old Bash, Terraform, and azd wrapper instructions don't describe the current
+deployment lifecycle.
 
 ## Clone an Agent
 
-```bash
-# Export source agent config
-./bin/export-agent.sh -s $SUB -g rg-source -n my-agent \
-  -o my-clone/ \
-  --set agentName=my-clone \
-  --set resourceGroup=rg-clone \
-  --set location=swedencentral
-
-# Deploy with any backend
-./bin/deploy.sh my-clone/           # Bicep
-./bin/deploy-tf.sh my-clone/        # Terraform
-```
+The former export and clone helpers aren't present. The current deployer doesn't
+export live state or clone data-plane assets. See the
+[existing-agent limitations](recipes/finops-hubs/README.md#deploy-to-an-existing-sre-agent)
+before targeting an existing resource.
 
 ## Terraform
 
-Uses the `azapi` provider for `Microsoft.App/agents`. Same config directory, same results as Bicep.
-
-```bash
-# Create + deploy (identical to Bicep flow)
-./bin/new-agent.sh --recipe azmon-lawappinsights --non-interactive \
-  --set agentName=my-agent \
-  --set resourceGroup=rg-my-agent \
-  --set location=swedencentral \
-  --set targetRGs=rg-my-workload \
-  -o my-agent/
-
-./bin/deploy-tf.sh my-agent/
-
-# Update (re-run — TF diffs and applies only changes)
-./bin/deploy-tf.sh my-agent/
-
-# Clone
-./bin/export-agent.sh -s $SUB -g rg-my-agent -n my-agent \
-  -o my-clone/ --set agentName=my-clone --set resourceGroup=rg-clone
-./bin/deploy-tf.sh my-clone/
-
-# Destroy
-./bin/deploy-tf.sh my-agent/ --destroy
-```
-
-Each agent gets its own Terraform workspace — deploy multiple agents from the same repo without state conflicts.
-
-### Prerequisites (Terraform only)
-
-| Tool | Install |
-|---|---|
-| Terraform 1.5+ | [install guide](https://developer.hashicorp.com/terraform/install) |
-| azapi provider | Auto-installed on `terraform init` |
-| azurerm provider | Auto-installed on `terraform init` |
+The former Terraform deployment wrapper isn't present. Use the PowerShell
+quick start above; don't assume parity with the former wrapper.
 
 ## Azure Developer CLI (azd)
 
-Wraps the Bicep flow in `azd up`. Set environment variables, run one command.
-
-```bash
-# Initialize
-azd init -t sreagent-recipes   # or clone + cd into repo
-azd env new my-agent
-
-# Set recipe + parameters
-azd env set RECIPE azmon-lawappinsights
-azd env set AZURE_AGENT_NAME my-agent
-azd env set AZURE_RESOURCE_GROUP rg-my-agent
-azd env set AZURE_LOCATION swedencentral
-azd env set AZURE_TARGET_RGS rg-my-workload
-azd env set AZURE_LAW_ID "/subscriptions/.../workspaces/my-law"
-azd env set AZURE_AI_ID "/subscriptions/.../components/my-ai"
-azd env set AZURE_AI_APPID "00000000-0000-0000-0000-000000000000"
-
-# Deploy (create or update)
-azd up
-
-# Clone: export, create new env, azd up
-./bin/export-agent.sh -s $SUB -g rg-my-agent -n my-agent \
-  -o agents/my-clone/ --set agentName=my-clone --set resourceGroup=rg-clone
-azd env new my-clone
-azd env set AZURE_AGENT_NAME my-clone
-azd env set AZURE_RESOURCE_GROUP rg-clone
-azd env set AZURE_LOCATION swedencentral
-azd up
-
-# Destroy
-azd down
-```
-
-Recipe-specific env vars:
-
-| Recipe | Extra env vars |
-|---|---|
-| pagerduty | `PAGERDUTY_API_KEY` |
-| dynatrace | `DT_TENANT`, `DT_TOKEN`, `GITHUB_REPO` |
+The current PowerShell deployer doesn't use azd environment variables or invoke
+azd hooks. Use its explicit parameters and input JSON files instead.
 
 ## PowerShell
 
-Full PowerShell 7+ port in [`bin/ps/`](bin/ps/). Same config directory, same results.
-
-```powershell
-./bin/ps/New-Agent.ps1 -Recipe azmon-lawappinsights -NonInteractive `
-  -Set @{agentName='my-agent'; resourceGroup='rg-my-agent'; location='swedencentral'; targetRGs='rg-my-workload'} `
-  -Output my-agent/
-
-./bin/ps/Deploy-Agent.ps1 -InputPath my-agent/
-```
+[`bin/ps/Deploy-Agent.ps1`](bin/ps/Deploy-Agent.ps1) is the current native
+PowerShell entry point. It reads JSON directly and returns the ARM deployment
+object after checking `ProvisioningState`. Follow the quick start above.
 
 | Script | Purpose |
 |---|---|
-| `New-Agent.ps1` | Create agent config from recipe |
-| `Deploy-Agent.ps1` | Deploy (Bicep + apply-extras) |
-| `Export-Agent.ps1` | Export/clone a live agent |
-| `Verify-Agent.ps1` | 22-point verification |
-| `Diff-Agent.ps1` | Compare config vs live agent |
+| `Deploy-Agent.ps1` | Deploy ARM infrastructure and connectors with Az PowerShell |
 
 ## CI/CD
 

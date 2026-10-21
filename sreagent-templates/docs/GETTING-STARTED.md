@@ -4,86 +4,40 @@ Step-by-step guide to create, deploy, and manage an Azure SRE Agent.
 
 ## Prerequisites
 
-- Azure subscription with Owner or Contributor access
-- Azure CLI installed and logged in (`az login`)
-- jq (`brew install jq` or `apt install jq`)
-- Python 3 with PyYAML (`pip install pyyaml`)
+- Azure subscription with permission to deploy resources and create role assignments
+- PowerShell 7+, `Az.Accounts`, `Az.Resources`, and the Bicep CLI
+- An existing authenticated Az PowerShell context for the deployment subscription
 - At least one resource group to monitor
 
-## Step 1: Clone this repo
+## Step 1: Open the repository
 
-```bash
-git clone https://github.com/microsoft/sre-agent.git
-cd sre-agent/sreagent-templates
+Use a checkout containing `sreagent-templates/bin/ps/Deploy-Agent.ps1`.
+Start PowerShell 7+ at the repository root, then change to the templates directory:
+
+```powershell
+Set-Location sreagent-templates
 ```
 
 ## Step 2: Choose your path
 
-### Path A: Create a new generic agent
+Use the checked-in [FinOps Hubs agent configuration](../agents/finops-hubs/README.md)
+for the current native PowerShell deployment path. It requires a real Hub
+endpoint for Kusto access. The former generic/recipe generators and clone
+helpers aren't present; don't pass unresolved recipe placeholders to deployment.
+For an existing agent, first review the
+[update limitations](../recipes/finops-hubs/README.md#deploy-to-an-existing-sre-agent).
 
-```bash
-./bin/new-agent.sh
+## Step 3: Review the input configuration
+
+```powershell
+Get-Content agents/finops-hubs/agent.json
+Get-Content agents/finops-hubs/connectors.json
 ```
 
-Prompts:
-| Prompt | Example | Required |
-|--------|---------|:--------:|
-| Agent name | `my-sre-agent` | yes |
-| Resource group | `sre-agent-rg` | yes |
-| Region | `eastus2` | yes |
-| Target RGs to monitor | `prod-rg,staging-rg` | yes |
-| Application Insights resource ID | `/subscriptions/.../components/my-ai` | no |
-| Log Analytics workspace ID | `/subscriptions/.../workspaces/my-law` | no |
-
-### Path B: Create from Dynatrace recipe
-
-```bash
-./bin/new-agent.sh --recipe dynatrace-mcp
-```
-
-Additional prompts:
-| Prompt | Example | Required |
-|--------|---------|:--------:|
-| Dynatrace tenant ID | `abc12345` (from `https://abc12345.apps.dynatrace.com`) | yes |
-| Dynatrace API token | needs `entities.read`, `events.read`, `metrics.read` scopes | yes |
-| GitHub repo URL | `https://github.com/myorg/myapp` | no |
-
-### Path C: Clone an existing agent
-
-```bash
-./bin/clone-agent.sh \
-  --from-agent prod-agent \
-  --from-rg prod-rg \
-  --from-sub 00000000-0000-0000-0000-000000000000 \
-  --agent-name prod-agent-eu \
-  --resource-group prod-eu-rg \
-  --location swedencentral \
-  --target-resource-groups eu-prod-rg
-```
-
-## Step 3: Review what was created
-
-```bash
-ls my-sre-agent/
-```
-
-```
-my-sre-agent/
-├── agent.json                    ← Edit: name, region, RGs, access level
-├── connectors.json               ← Edit: resource IDs, endpoints
-├── connectors.secrets.env        ← Edit: bearer tokens, API keys (NEVER commit)
-└── config/
-    ├── skills/                     Investigation playbooks (.yaml + .md)
-    ├── subagents/                  Specialist agents (.yaml + .instructions.md)
-    ├── tools/                      Custom tools (KustoTool, Python, HTTP)
-    ├── hooks/                      Pre/Post tool use handlers
-    ├── common-prompts/             System prompts
-    ├── scheduled-tasks/            Cron-based runs
-    ├── incident-filters/           Alert routing rules
-    ├── http-triggers/              Webhook endpoints
-    ├── repos/                      GitHub/ADO code repo bindings
-    └── plugin-configs/             Plugin settings
-```
+The deployer reads these two JSON files directly. Command-line identity and
+targeting parameters override `agent.json`; the remaining supported settings
+come from JSON. It doesn't resolve secret files or assemble YAML, Markdown,
+roles, or other data-plane assets. Never put secrets in committed JSON files.
 
 ### UAMI access (Managed Identity)
 
@@ -94,10 +48,11 @@ The Bicep template creates a User-Assigned Managed Identity (UAMI) and grants it
 | **Target resource groups** | Automatic — Bicep grants Reader + Log Analytics Reader (+ Contributor if accessLevel=High) | During deploy |
 | **Target subscriptions** (if monitoring cross-sub) | `az role assignment create --assignee-object-id $UAMI --role Reader --scope /subscriptions/$TARGET_SUB` | After deploy |
 | **Kusto/ADX cluster** | `az kusto database add-principal` with Viewer role | After deploy |
-| **Teams / Outlook** | API connection created by `roles.yaml`. User signs in via consent URL | After deploy |
-| **ADO repos** (via MI) | Federated Identity Credential on UAMI → ADO org. Then `ADO_USE_MI=1` | After deploy |
+| **Teams / Outlook** | Separate connector setup and user consent; the current deployer doesn't process `roles.yaml` | After deploy |
+| **ADO repos** (via MI) | Separate federated identity and repository setup; the current deployer doesn't process `ADO_USE_MI` | After deploy |
 
-The UAMI principal ID is printed in the deploy output. To retrieve it later:
+The deployer prints the ARM deployment object, not a dedicated UAMI principal
+summary. To retrieve the principal later:
 
 ```bash
 # Get UAMI principal ID from the agent's resource group
@@ -135,45 +90,61 @@ For connectors that use MI, no secrets are needed in files — just RBAC grants.
 | AppInsights, Log Analytics, Azure Monitor | Managed Identity | No secrets — UAMI needs Reader on the resource (auto-granted for target RGs) |
 | Kusto/ADX | Managed Identity | No secrets — UAMI needs Viewer on the cluster (grant after deploy) |
 | MCP (Dynatrace, Datadog, Splunk, etc.) | Bearer token | `connectors.secrets.env` → `${ENV_VAR}` in `connectors.json` |
-| GitHub | OAuth or PAT | Sign in via URL printed by deploy.sh, or set `GITHUB_PAT` env var |
-| Azure DevOps | PAT / AAD / MI | `ADO_PAT`, `ADO_USE_AAD=1`, or `ADO_USE_MI=1` env var before deploy |
-| Teams / Outlook | OAuth consent | Add to `roles.yaml` as `type: api-connection`. deploy.sh creates the resource and prints consent URL |
+| GitHub | OAuth or PAT | Requires separate connector setup; the current deployer doesn't handle sign-in or resolve PAT environment variables |
+| Azure DevOps | PAT / AAD / MI | Requires separate connector setup; the current deployer doesn't process these authentication environment variables |
+| Teams / Outlook | OAuth consent | The current deployer doesn't process `roles.yaml`, create OAuth API connections, or print consent URLs |
 | PagerDuty / ServiceNow | Portal setup | Configure via portal Incident Platforms page after deploy |
 
-## Step 4: Validate (dry run)
+## Step 4: Check local inputs
 
-```bash
-./bin/clone-agent.sh --source my-sre-agent/ \
-  --agent-name my-sre-agent \
-  --resource-group sre-agent-rg \
-  --validate-only
+There is no dry-run, what-if, or validate-only mode in the current script.
+Use these non-deploying checks from `sreagent-templates/` in PowerShell:
+
+```powershell
+Get-Command New-AzSubscriptionDeployment, Get-AzContext, bicep -ErrorAction Stop
+Get-Content agents/finops-hubs/agent.json -Raw | ConvertFrom-Json -ErrorAction Stop
+Get-Content agents/finops-hubs/connectors.json -Raw | ConvertFrom-Json -ErrorAction Stop
+Get-Command ./bin/ps/Deploy-Agent.ps1 -Syntax
 ```
 
-Checks:
-- Region is supported (eastus2, swedencentral, uksouth, australiaeast)
-- At least 1 connector configured
-- No unfilled `EDIT_ME` placeholders
-- Connector auth requirements flagged (which need tokens, which need portal sign-in)
-- Model provider detected
-- Feature flags checked
-- Skill/subagent file references resolve
-
-Fix any errors before deploying. Warnings are advisory.
+These check local prerequisites, JSON syntax, and parameter discovery only.
+They don't prove Azure permissions, connector health, Hub connectivity, or full
+recipe readiness. Review identity, scope, and configuration before deploying.
 
 ## Step 5: Deploy
 
-```bash
-./bin/deploy.sh my-sre-agent/
+Run inside PowerShell 7+ from `sreagent-templates/`, replacing the placeholders:
+
+```powershell
+./bin/ps/Deploy-Agent.ps1 -InputPath agents/finops-hubs/ `
+  -SubscriptionId '<subscription-id>' `
+  -AgentName '<agent-name>' `
+  -ResourceGroup '<agent-resource-group>' `
+  -Location 'eastus2' `
+  -TargetResourceGroups @('<target-resource-group-1>', '<target-resource-group-2>') `
+  -KustoClusterUrl 'https://<cluster>.<region>.kusto.windows.net' `
+  -KustoDatabase 'Hub'
 ```
 
-What happens:
-1. Assembles YAML config → Bicep JSON (internal)
-2. Runs `az deployment sub create` (creates agent + identity + RBAC)
-3. Applies data-plane config (repos, hooks, knowledge, auth)
-4. Processes `roles.yaml` (grants RBAC, creates API connections, prints consent URLs)
-5. Prints portal links
+`-TargetResourceGroups` takes a string array, not a comma-separated string.
+Don't pass the array through `pwsh -File` from Bash. `-SubscriptionId` uses an
+already available Az context without signing in or changing the saved context.
+Without it, `agent.json.identity.subscription` is used when set, otherwise
+deployment uses the current context.
+
+The script reads the two JSON files, supplies supported parameters to
+`bicep/main.bicep`, and calls `New-AzSubscriptionDeployment`. It checks that
+`ProvisioningState` is `Succeeded`, prints the result, and returns the deployment
+object. It doesn't run apply-extras, install recipe data-plane assets, write
+deployment logs, or verify the live agent. ARM success isn't full recipe
+installation. See the [exact parameter reference](../agents/finops-hubs/README.md#parameters).
 
 ## Step 6: Post-deploy setup
+
+These are manual readiness checks, not steps performed by the deployer.
+The full FinOps Hubs recipe remains incomplete until its missing data-plane
+installation lifecycle is restored; don't assume its skills, plugins, Teams
+connector, or scheduled tasks were installed.
 
 1. **Open** https://sre.azure.com → find your agent
 2. **Features** → enable:
@@ -187,25 +158,8 @@ What happens:
 
 ## Common operations
 
-### Export an agent for backup
-
-```bash
-./bin/export-agent.sh -s $SUB -g my-rg -n my-agent -o backups/my-agent --include-all
-```
-
-### Clone to another region (DR)
-
-```bash
-./bin/clone-agent.sh --from-agent prod --from-rg prod-rg --from-sub $SUB \
-  --agent-name prod-eu --resource-group prod-eu-rg --location swedencentral
-```
-
-### Nightly backup to Git
-
-```bash
-./bin/export-agent.sh -s $SUB -g my-rg -n my-agent -o agents/prod --include-all
-cd agents/prod && git add -A && git commit -m "backup $(date +%Y-%m-%d)" && git push
-```
+The former export, clone, and backup helpers aren't present in this checkout.
+The current deployment command doesn't replace them or export live state.
 
 ## Model providers
 
