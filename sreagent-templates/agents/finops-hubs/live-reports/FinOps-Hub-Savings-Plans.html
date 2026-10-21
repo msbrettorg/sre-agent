@@ -9,19 +9,36 @@
     :root {
       color-scheme: light;
       --ink: #16233a;
-      --muted: #52647d;
+      --muted: #5f6f85;
       --line: #dce4ef;
       --paper: #f6f8fc;
       --card: #fff;
-      --blue: #0864ca;
-      --green: #116d58;
-      --red: #a1253a;
+      --navy: #12233f;
+      --blue: #1479e8;
+      --cyan: #21b7cf;
+      --green: #14866d;
+      --red: #b33145;
+      --shadow: 0 12px 28px rgba(31, 52, 84, 0.08);
     }
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-    main { width: min(1280px, 100%); margin: 0 auto; padding: 48px 32px; }
+    main { max-width: 1440px; margin: 0 auto; padding: 22px; }
+    .workspace { display: grid; grid-template-columns: 214px minmax(0, 1fr); gap: 18px; align-items: start; }
+    .content { min-width: 0; }
+    .side-nav { position: sticky; top: 18px; padding: 16px 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); box-shadow: 0 3px 12px rgba(23, 44, 73, 0.035); }
+    .nav-brand { padding: 4px 8px 16px; color: var(--navy); font-size: 15px; font-weight: 800; letter-spacing: -0.02em; }
+    .nav-caption { margin: 0 8px 6px; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
+    .nav-caption:not(:first-of-type) { margin-top: 16px; }
+    .nav-button { display: block; width: 100%; min-height: 44px; padding: 9px 10px; border: 0; border-radius: 9px; background: transparent; color: #52647c; cursor: pointer; font: inherit; font-size: 13px; font-weight: 650; text-align: left; white-space: normal; }
+    .nav-button:hover { background: #edf4fc; color: var(--navy); }
+    .nav-button.active { background: #e2effd; color: #0d5fb9; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .hero { position: relative; overflow: hidden; border-radius: 20px; padding: 28px 30px; background: linear-gradient(118deg, var(--navy), #1c4776 62%, #10728b); color: #fff; box-shadow: var(--shadow); }
+    .hero .intro { color: #d7e9fb; }
+    .dashboard-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 16px; padding: 13px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
     header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
-    h1 { margin: 0; font-size: 34px; line-height: 1.2; letter-spacing: -.025em; }
+    h1 { margin: 0; font-size: clamp(28px, 4vw, 44px); line-height: 1.06; letter-spacing: -.04em; }
     h2 { margin: 0; font-size: 19px; letter-spacing: -.015em; }
     p { margin: 0; }
     .intro { margin-top: 10px; max-width: 70ch; color: var(--muted); }
@@ -29,14 +46,14 @@
     button:hover { background: #0756ad; }
     button:disabled { cursor: wait; background: #52647d; border-color: #52647d; }
     :focus-visible { outline: 3px solid var(--blue); outline-offset: 4px; }
-    .source-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 20px; margin: 24px 0 18px; color: var(--muted); font-size: 13px; }
-    #status { color: var(--ink); font-weight: 650; }
-    #status[data-state="ready"] { color: var(--green); }
-    #status[data-state="error"] { color: var(--red); }
+    .source-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; margin-top: 20px; color: #eaf6ff; font-size: 12px; }
+    .source-line > span { padding: 7px 10px; border: 1px solid rgba(255,255,255,0.22); border-radius: 999px; background: rgba(6,20,40,0.2); }
+    #status { font-weight: 650; }
+    #status[data-state="ready"] { color: #8ce8c3; }
+    #status[data-state="error"] { color: #ffd4da; }
     .scope { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
-    .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 28px 0 36px; border-block: 1px solid var(--line); background: var(--card); }
-    .metric { min-width: 0; padding: 24px; }
-    .metric + .metric { border-left: 1px solid var(--line); }
+    .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 18px 0; }
+    .metric { min-width: 0; padding: 19px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); box-shadow: 0 3px 12px rgba(23,44,73,0.035); }
     .metric-label { color: var(--muted); font-size: 14px; }
     .metric-value { margin: 8px 0 6px; font-size: 34px; font-weight: 700; line-height: 1.2; letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
     .metric-note { color: var(--muted); font-size: 12px; }
@@ -69,12 +86,15 @@
     nav { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 20px; border-bottom: 1px solid var(--line); }
     nav a { display: inline-flex; min-height: 44px; align-items: center; color: var(--blue); text-decoration: none; font-weight: 600; font-size: 14px; }
     nav a:hover { text-decoration: underline; }
-    .section { margin-top: 36px; scroll-margin-top: 24px; }
+    .section { margin-top: 24px; scroll-margin-top: 24px; }
+    .section.tab-panel { padding: 21px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); box-shadow: 0 3px 12px rgba(23,44,73,0.035); }
     .section-copy { margin: 8px 0 18px; max-width: 85ch; color: var(--muted); font-size: 13px; }
     .model { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 32px; padding: 24px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
-    .controls { display: grid; align-content: start; gap: 18px; }
+    .controls { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; align-content: start; gap: 18px; }
+    .controls > * { min-width: 0; }
+    .controls button { white-space: normal; }
     label { display: block; font-size: 13px; font-weight: 600; }
-    select { display: block; width: 100%; min-height: 44px; margin-top: 6px; padding: 8px 10px; border: 1px solid #a1afc2; border-radius: 6px; background: var(--card); color: var(--ink); font: inherit; }
+    select { display: block; width: 100%; min-width: 0; max-width: 100%; min-height: 44px; margin-top: 6px; padding: 8px 10px; border: 1px solid #a1afc2; border-radius: 6px; background: var(--card); color: var(--ink); font: inherit; }
     input[type="range"] { width: 100%; min-height: 44px; margin: 4px 0 0; accent-color: var(--blue); }
     .commitment { display: block; margin-top: 6px; font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
     .control-note { margin-top: 4px; color: var(--muted); font-size: 12px; font-weight: 400; }
@@ -87,6 +107,7 @@
     .outcome-value { display: block; margin: 8px 0 4px; font-size: 26px; font-weight: 700; line-height: 1.25; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
     .positive { color: var(--green); }
     .comparison { margin-top: 22px; }
+    .comparison progress { width: 100%; height: 10px; margin-top: 9px; }
     .comparison-row { margin-top: 18px; }
     .comparison-label { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 13px; }
     .bar-track { height: 10px; margin-top: 9px; border-radius: 4px; background: #e7edf6; overflow: hidden; }
@@ -110,40 +131,59 @@
       .check { grid-column: span 2; }
       .coverage-grid { gap: 24px; }
     }
+    @media (max-width: 980px) {
+      .workspace { grid-template-columns: 1fr; }
+      .side-nav { position: static; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+      .nav-brand { grid-column: 1 / -1; }
+      .nav-caption { display: none; }
+    }
     @media (max-width: 640px) {
       main { padding: 24px 16px; }
       header { flex-wrap: wrap; }
       .metrics, .coverage-grid, .outcome-strip, .controls { grid-template-columns: minmax(0, 1fr); }
-      .metric + .metric { border-left: 0; border-top: 1px solid var(--line); }
+      .side-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .check { grid-column: auto; }
     }
   </style>
 </head>
 <body>
   <main>
-    <header>
-      <div>
-        <h1>Savings plans</h1>
-        <p class="intro">Review observed commitment utilization. Azure purchase recommendations are separate from cost history.</p>
-      </div>
+    <div class="workspace">
+      <aside class="side-nav" aria-label="Savings plan dashboard sections">
+        <div class="nav-brand">FinOps hub</div>
+        <p class="nav-caption">Understand</p>
+        <button class="nav-button active" type="button" data-tab="summary" aria-current="page">Summary</button>
+        <button class="nav-button" type="button" data-tab="current-plans">Observed utilization</button>
+        <p class="nav-caption">Optimize</p>
+        <button class="nav-button" type="button" data-tab="recommendations">Recommendations</button>
+        <button class="nav-button" type="button" data-tab="modeler">Impact modeler</button>
+        <button class="nav-button" type="button" data-tab="coverage">Coverage</button>
+      </aside>
+      <div class="content">
+    <div class="dashboard-controls">
+      <span>Savings plans only · Read-only live data</span>
       <button id="refresh" type="button">Refresh data</button>
-    </header>
-    <div class="source-line">
-      <span id="status" role="status" aria-live="polite">Connecting to FinOps Hub...</span>
-      <span>FinOps Hub cost exports</span>
-      <span id="refreshed">Not refreshed</span>
     </div>
+    <header class="hero">
+      <div>
+        <h1>Savings plans command center</h1>
+        <p class="intro">Review observed commitment utilization. Azure purchase recommendations are separate from cost history.</p>
+        <div class="source-line">
+          <span id="status" role="status" aria-live="polite">Connecting to FinOps Hub...</span>
+          <span>FinOps Hub costs and Azure benefit data</span>
+          <span id="refreshed">Not refreshed</span>
+        </div>
+      </div>
+    </header>
     <p id="scope" class="scope">Scope: all billing accounts and profiles visible to the configured Hub connector.</p>
     <p class="scope-note">Observed cost records are not purchased-plan inventory. No active status, hourly commitment, term, or expiry is inferred.</p>
-    <nav aria-label="Dashboard sections">
-      <a href="#modeler">Modeler</a><a href="#coverage">Coverage</a><a href="#recommendations">Recommendations</a><a href="#current-plans">Observed plans</a>
-    </nav>
     <section id="error" class="error" role="alert" hidden>
-      <strong>Live utilization could not be loaded</strong>
+      <strong>Some live data could not be loaded</strong>
       <p id="error-detail"></p>
-      <p>No replacement values are shown. Select Refresh data to retry.</p>
+      <p>Available sources remain visible. Failed sources show no replacement values. Select Refresh data to retry.</p>
     </section>
-    <section class="metrics" aria-label="Observed savings plan summary">
+    <section class="tab-panel active" data-tab-panel="summary" aria-label="Observed savings plan summary">
+    <div class="metrics">
       <div class="metric">
         <p class="metric-label">Observed savings plan IDs</p>
         <p class="metric-value" id="plan-count">&mdash;</p>
@@ -159,53 +199,55 @@
         <p class="metric-value muted-value">Unavailable</p>
         <p class="metric-note">Eligible usage has not been verified against the customer price sheet</p>
       </div>
+    </div>
+    <p class="section-copy">Start with observed utilization, then explore Azure recommendations and their evaluated alternatives. Confirm the billing profile, currency, term, and evaluation period before comparing results. This report does not purchase or modify savings plans.</p>
     </section>
-    <section id="modeler" class="section" aria-labelledby="model-title">
-      <div class="section-title"><h2 id="model-title">Recommendation impact modeler</h2><span class="scope">Unavailable without Azure-evaluated scenarios</span></div>
+    <section id="modeler" class="section tab-panel" data-tab-panel="modeler" aria-labelledby="model-title">
+      <div class="section-title"><h2 id="model-title">Recommendation impact modeler</h2><span id="model-period" class="scope">Awaiting Azure-evaluated scenarios</span></div>
       <p class="section-copy">Only exact scenarios returned by Azure Benefit Recommendations may inform this model. Cost history alone cannot supply a purchase recommendation.</p>
-      <div class="notice" role="status">Azure Benefit Recommendations have not been returned through this report's configured Kusto tool. The modeler is disabled. No commitment, discount rate, savings, or scenario curve is synthesized.</div>
+      <div id="recommendation-note" class="notice" role="status">Loading Azure Benefit Recommendations. No commitment, discount rate, savings, or scenario curve is synthesized.</div>
       <div class="model">
         <div class="controls">
-          <label>Plan type<select disabled><option>Unavailable</option></select></label>
-          <label>Term<select disabled><option>Unavailable</option></select></label>
-          <label>Additional hourly commitment
-            <output class="commitment">&mdash;</output>
-            <input type="range" min="0" max="0" value="0" disabled aria-label="Azure-evaluated hourly commitment option">
+          <label>Plan type / billing profile<select id="model-plan" disabled><option>Unavailable</option></select></label>
+          <label>Term<select id="model-term" disabled><option value="P3Y">3 years</option><option value="P1Y">1 year</option></select></label>
+          <label>Azure-evaluated hourly commitment
+            <output id="model-commitment" class="commitment">&mdash;</output>
+            <input id="model-option" type="range" min="0" max="0" value="0" step="1" disabled aria-label="Azure-evaluated hourly commitment option">
             <span class="control-note">Azure-evaluated options only; no interpolation</span>
           </label>
-          <button class="secondary" type="button" disabled>Use Azure recommendation</button>
-          <label class="check"><input type="checkbox" disabled>Show 730-hour monthly equivalents</label>
+          <button id="model-recommended" class="secondary" type="button" disabled>Use Azure recommendation</button>
+          <p id="model-source" class="control-note">Actual evaluated-period totals only; no monthly extrapolation.</p>
         </div>
         <div class="outcomes">
           <div class="outcome-strip">
-            <div><p class="metric-label">Estimated net savings</p><output class="outcome-value">&mdash;</output><span class="metric-note">No Azure scenario returned</span></div>
-            <div><p class="metric-label">Unused commitment</p><output class="outcome-value">&mdash;</output><span class="metric-note">No Azure scenario returned</span></div>
-            <div><p class="metric-label">Modeled utilization</p><output class="outcome-value">&mdash;</output><span class="metric-note">No Azure scenario returned</span></div>
+            <div><p class="metric-label">Azure estimated savings</p><output id="model-savings" class="outcome-value">&mdash;</output><span class="metric-note">Azure estimate, not guaranteed savings</span></div>
+            <div><p class="metric-label">Azure estimated wastage cost</p><output id="model-wastage" class="outcome-value">&mdash;</output><span class="metric-note">Returned evaluated-period amount</span></div>
+            <div><p class="metric-label">Azure modeled utilization</p><output id="model-utilization" class="outcome-value">&mdash;</output><span class="metric-note">Returned scenario percentage</span></div>
           </div>
           <div class="comparison">
-            <div class="comparison-row"><div class="comparison-label"><span>Eligible cost without the new plan</span><strong>&mdash;</strong></div><div class="bar-track"></div></div>
-            <div class="comparison-row"><div class="comparison-label"><span>Eligible cost with the modeled plan</span><strong>&mdash;</strong></div><div class="bar-track"></div></div>
+            <div class="comparison-row"><div class="comparison-label"><span>Azure evaluated cost without benefit</span><strong id="model-without">&mdash;</strong></div><progress id="bar-without" max="1" value="0" aria-label="Azure evaluated cost without benefit"></progress></div>
+            <div class="comparison-row"><div class="comparison-label"><span>Azure modeled total cost</span><strong id="model-with">&mdash;</strong></div><progress id="bar-with" max="1" value="0" aria-label="Azure modeled total cost"></progress></div>
           </div>
-          <p class="model-note">No purchase guidance is provided. Retrieve current Azure Benefit Recommendations for the intended billing scope before evaluating a commitment.</p>
+          <p class="model-note">Select only actual Azure-evaluated alternatives. Amounts cover the returned evaluation period, not a future monthly bill. Estimates are not guaranteed savings; no purchases are performed.</p>
         </div>
       </div>
     </section>
-    <section id="coverage" class="section" aria-labelledby="coverage-title">
+    <section id="coverage" class="section tab-panel" data-tab-panel="coverage" aria-labelledby="coverage-title">
       <h2 id="coverage-title">Coverage</h2>
-      <p class="section-copy">Coverage and utilization are different measures. Utilization below reports used versus unused commitment cost, not the share of eligible usage covered by a savings plan.</p>
+      <p class="section-copy">Coverage and utilization are different measures. Observed cost utilization reports used versus unused commitment cost. Azure daily utilization is reported separately. Neither is the share of eligible usage covered by a savings plan.</p>
       <div class="coverage-grid">
         <div><h3>Current compute coverage</h3><span class="coverage-value muted-value">Unavailable</span><p>No verified price-sheet eligibility and billing-scope reconciliation has been returned. No coverage percentage is inferred from service categories.</p></div>
-        <div><h3>After a modeled commitment</h3><output class="coverage-value muted-value">Unavailable</output><p>No Azure Benefit Recommendations scenario has been returned. No modeled coverage is substituted.</p></div>
+        <div><h3>Azure modeled coverage</h3><output id="model-coverage" class="coverage-value muted-value">Unavailable</output><p id="coverage-source">Awaiting an Azure-evaluated scenario. This Azure modeled cohort is not a like-for-like before/after comparison with current compute coverage.</p></div>
       </div>
     </section>
-    <section id="recommendations" class="section" aria-labelledby="recommendations-title">
+    <section id="recommendations" class="section tab-panel" data-tab-panel="recommendations" aria-labelledby="recommendations-title">
       <div class="section-title"><h2 id="recommendations-title">Savings plan recommendations</h2><span class="scope">Azure source required</span></div>
       <p class="section-copy">Recommendations must come from Microsoft.CostManagement/benefitRecommendations. This report does not generate recommendations from PAYG cost rows.</p>
       <div class="table-wrap">
-        <table><caption>Azure savings-plan recommendations</caption><thead><tr><th scope="col">Plan type</th><th scope="col">Term</th><th scope="col">Hourly commitment</th><th scope="col">Estimated savings</th><th scope="col">Coverage after</th><th scope="col">Explore</th></tr></thead><tbody><tr><td colspan="6" class="message">Unavailable: no live Azure Benefit Recommendations response has been returned to this report. This is not evidence that Azure has no recommendations.</td></tr></tbody></table>
+        <table><caption>Azure savings-plan recommendations</caption><thead><tr><th scope="col">Plan type / billing scope</th><th scope="col">Term</th><th scope="col">Hourly commitment</th><th scope="col">Azure estimated savings</th><th scope="col">Azure modeled coverage</th><th scope="col">Explore</th></tr></thead><tbody id="azure-recommendations"><tr><td colspan="6" class="message">Loading real Azure Benefit Recommendations...</td></tr></tbody></table>
       </div>
     </section>
-    <section id="current-plans" class="section" aria-labelledby="plans-title">
+    <section id="current-plans" class="section tab-panel" data-tab-panel="current-plans" aria-labelledby="plans-title">
       <div class="section-title"><h2 id="plans-title">Observed commitment utilization</h2><p id="period">Loading reporting period...</p></div>
       <div class="table-wrap">
         <table aria-describedby="data-note">
@@ -215,20 +257,29 @@
         </table>
       </div>
       <p id="data-note">Observed utilization = Used EffectiveCost / (Used + Unused EffectiveCost), excluding purchases. Windows end at today's UTC midnight and include only reported cost rows, which can be delayed or revised. Missing rows are not filled with zero. A zero denominator or invalid cost makes the percentage unavailable. Currencies, accounts, and billing profiles remain separate.</p>
+      <h3 class="section">Azure benefit utilization</h3>
+      <p id="benefit-utilization-note" class="section-copy">Loading Azure daily benefit utilization. These records are not purchased-plan inventory.</p>
+      <div class="table-wrap"><table><caption>Azure daily benefit utilization, excluding the current incomplete UTC day</caption><thead><tr><th scope="col">Benefit / billing scope</th><th scope="col">Usage day (UTC)</th><th scope="col">Daily average</th><th scope="col">Daily minimum</th><th scope="col">Daily maximum</th></tr></thead><tbody id="azure-utilization"><tr><td colspan="5" class="message">Loading real Azure utilization...</td></tr></tbody></table></div>
     </section>
     <details>
       <summary>Source and calculation</summary>
       <p id="source-target">Kusto target: not configured.</p>
-      <p>Live path: this single-file report calls the hosted window.sreagent.callTool Kusto tool. There are no external modules, browser credentials, localhost API dependencies, or saved-result fallbacks.</p>
+      <p>Live path: this single-file report calls the hosted window.sreagent.callTool Kusto and Azure benefit tools. There are no external modules, browser credentials, localhost API dependencies, or saved-result fallbacks.</p>
       <p>Observed source: <code>Costs()</code>, <code>CommitmentDiscountType == 'Savings Plan'</code>, <code>ChargeCategory == 'Usage'</code>, and reported <code>Used</code> or <code>Unused</code> commitment-discount status. These are cost-allocation statuses, not plan lifecycle statuses.</p>
       <p>Only observed 7-day and 30-day utilization is calculated. Cost rows do not establish current purchased-plan inventory, active status, contractual hourly commitment, term, or expiry. Those fields require authoritative Azure Billing data and remain unavailable here.</p>
-      <p>Azure Benefit Recommendations and customer price-sheet eligibility are not loaded by this Kusto-only report. Purchase modeling and coverage remain explicitly unavailable, rather than substituting discounts or synthetic scenarios. No purchases or Azure configuration changes are performed.</p>
+      <p>Azure Benefit Recommendations are requested at MCA billing-profile scopes discovered from Costs(), for Shared scope, P1Y/P3Y terms, Last30Days and expand=true. The modeler uses only returned allRecommendationDetails alternatives. Azure estimates are not guaranteed savings. Daily Azure benefit utilization excludes the current UTC day. Missing or invalid values remain unavailable. Purchased-plan inventory and customer price-sheet eligibility are not supplied by these operations. No purchases or Azure configuration changes are performed.</p>
     </details>
+      </div>
+    </div>
   </main>
   <script nonce="{REPORT_NONCE}">
     const TOOL_NAME = 'system-mcp-kusto_kusto_query';
+    // Replace the cluster placeholder in a prepared copy before manual upload.
     const CLUSTER_URI = 'REPLACE_WITH_FINOPS_HUB_CLUSTER_URI';
     const DATABASE = 'Hub';
+    const RECOMMENDATION_TOOL = 'azure-resource-manager-mcp_get_benefit_recommendations';
+    const UTILIZATION_TOOL = 'azure-resource-manager-mcp_list_benefit_utilization';
+    let recommendations = [];
     const byId = (id) => document.getElementById(id);
     const percentFormat = new Intl.NumberFormat("en-US", { style: "percent", minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const dateFormat = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
@@ -238,6 +289,274 @@
       if (text !== undefined) node.textContent = text;
       if (className) node.className = className;
       return node;
+    }
+    function messageRow(target, text, columns) {
+      const row = element("tr");
+      const cell = element("td", text, "message");
+      cell.colSpan = columns;
+      row.append(cell);
+      byId(target).replaceChildren(row);
+    }
+    function benefitRecords(raw) {
+      let payload = raw;
+      for (let depth = 0; depth < 8; depth += 1) {
+        if (typeof payload === "string") {
+          payload = JSON.parse(payload);
+          continue;
+        }
+        if (payload?.isError || payload?.error || (typeof payload?.status === "number" && payload.status >= 400)) {
+          throw new Error("Azure benefit tool returned an error: " + JSON.stringify(payload));
+        }
+        if (Array.isArray(payload?.value)) {
+          if (payload.nextLink) throw new Error("Azure returned a partial benefit response with more pages; complete data is unavailable.");
+          return payload.value;
+        }
+        if (payload?.structuredContent !== undefined) payload = payload.structuredContent;
+        else if (payload?.result !== undefined) payload = payload.result;
+        else if (Array.isArray(payload?.content)) {
+          const text = payload.content.find((entry) => entry?.type === "text" && typeof entry.text === "string");
+          if (!text) throw new Error("Azure benefit response has no text result.");
+          payload = text.text;
+        } else break;
+      }
+      throw new Error("Azure benefit response is missing result.value.");
+    }
+    function numeric(value, name, minimum = 0) {
+      if (typeof value !== "number" || !Number.isFinite(value) || value < minimum) {
+        throw new Error(`Azure returned missing or invalid ${name}.`);
+      }
+      return value;
+    }
+    function percentage(value, name) {
+      numeric(value, name, -0.000001);
+      if (value > 100.000001) throw new Error(`Azure returned invalid ${name}.`);
+      return Math.max(0, Math.min(value, 100));
+    }
+    function detail(value) {
+      if (!value || typeof value !== "object") throw new Error("Azure recommendation details are missing.");
+      for (const key of ["commitmentAmount", "overageCost", "benefitCost", "totalCost", "wastageCost"]) numeric(value[key], key);
+      numeric(value.savingsAmount, "savingsAmount", -Infinity);
+      numeric(value.savingsPercentage, "savingsPercentage", -Infinity);
+      percentage(value.averageUtilizationPercentage, "averageUtilizationPercentage");
+      percentage(value.coveragePercentage, "coveragePercentage");
+      return value;
+    }
+    function normalizeRecommendation(record, scope, term) {
+      if (record?.kind !== "SavingsPlan") return null;
+      const p = record.properties;
+      if (!p || !["Compute_Savings_Plan", "Database_Savings_Plan"].includes(p.armSkuName) ||
+          p.term !== term || p.scope !== "Shared" || p.lookBackPeriod !== "Last30Days" ||
+          typeof p.currencyCode !== "string" || !/^[A-Z]{3}$/.test(p.currencyCode) ||
+          typeof record.id !== "string" || !record.id) throw new Error("Azure returned incomplete recommendation identity, currency, scope, or period.");
+      numeric(p.totalHours, "totalHours");
+      if (!Number.isInteger(p.totalHours) || p.totalHours === 0 || typeof p.firstConsumptionDate !== "string" || typeof p.lastConsumptionDate !== "string" ||
+          !Number.isFinite(Date.parse(p.firstConsumptionDate)) || !Number.isFinite(Date.parse(p.lastConsumptionDate)) ||
+          Date.parse(p.firstConsumptionDate) > Date.parse(p.lastConsumptionDate)) throw new Error("Azure recommendation evaluation period is missing or invalid.");
+      numeric(p.costWithoutBenefit, "costWithoutBenefit");
+      if (!Array.isArray(p.allRecommendationDetails?.value) || !p.allRecommendationDetails.value.length || p.allRecommendationDetails.nextLink) {
+        throw new Error(`${p.armSkuName}: expanded allRecommendationDetails are unavailable; no scenario is estimated.`);
+      }
+      function point(value) {
+        const result = detail(value);
+        if (Math.abs(result.totalCost - result.benefitCost - result.overageCost) > 0.02 ||
+            Math.abs(p.costWithoutBenefit - result.totalCost - result.savingsAmount) > 0.02 ||
+            Math.abs(result.commitmentAmount * p.totalHours - result.benefitCost) > 0.02 ||
+            result.wastageCost > result.benefitCost + 0.02) {
+          throw new Error("Azure recommendation costs do not reconcile; modeling is unavailable.");
+        }
+        return result;
+      }
+      const options = p.allRecommendationDetails.value.map(point);
+      const recommended = point(p.recommendationDetails);
+      if (!options.some((option) => option.commitmentAmount === recommended.commitmentAmount)) options.push(recommended);
+      options.sort((a, b) => a.commitmentAmount - b.commitmentAmount);
+      if (new Set(options.map((option) => option.commitmentAmount)).size !== options.length) throw new Error("Azure returned duplicate commitment options.");
+      const recommendedIndex = options.findIndex((option) => option.commitmentAmount === recommended.commitmentAmount);
+      if (["overageCost", "benefitCost", "totalCost", "savingsAmount", "wastageCost", "savingsPercentage", "coveragePercentage", "averageUtilizationPercentage"]
+          .some((key) => Math.abs(options[recommendedIndex][key] - recommended[key]) > (key.endsWith("Percentage") ? 0.000001 : 0.02))) {
+        throw new Error("Azure's highlighted recommendation conflicts with its evaluated alternatives.");
+      }
+      return { scope, p, options, recommendedIndex };
+    }
+    function money(value, currency, digits = 2) {
+      return new Intl.NumberFormat("en-US", { style: "currency", currency, minimumFractionDigits: digits, maximumFractionDigits: digits }).format(value);
+    }
+    function skuLabel(sku) {
+      return ({ Compute_Savings_Plan: "Compute", Database_Savings_Plan: "Database" })[sku] || sku;
+    }
+    function termLabel(term) {
+      return ({ P1Y: "1 year", P3Y: "3 years" })[term] || term;
+    }
+    function renderScenario() {
+      const rec = recommendations[Number(byId("model-plan").value)];
+      if (!rec) return;
+      const scenario = rec.options[Number(byId("model-option").value)];
+      if (!scenario) return;
+      byId("model-commitment").textContent = `${money(scenario.commitmentAmount, rec.p.currencyCode, 3)} / hour`;
+      byId("model-option").setAttribute("aria-valuetext", `${money(scenario.commitmentAmount, rec.p.currencyCode, 3)} per hour; option ${Number(byId("model-option").value) + 1} of ${rec.options.length}`);
+      byId("model-savings").textContent = money(scenario.savingsAmount, rec.p.currencyCode);
+      byId("model-wastage").textContent = money(scenario.wastageCost, rec.p.currencyCode);
+      byId("model-utilization").textContent = percentFormat.format(percentage(scenario.averageUtilizationPercentage, "averageUtilizationPercentage") / 100);
+      byId("model-coverage").textContent = percentFormat.format(percentage(scenario.coveragePercentage, "coveragePercentage") / 100);
+      byId("model-without").textContent = money(rec.p.costWithoutBenefit, rec.p.currencyCode);
+      byId("model-with").textContent = money(scenario.totalCost, rec.p.currencyCode);
+      const maximum = Math.max(rec.p.costWithoutBenefit, scenario.totalCost);
+      for (const [id, value] of [["bar-without", rec.p.costWithoutBenefit], ["bar-with", scenario.totalCost]]) {
+        byId(id).max = maximum > 0 ? maximum : 1;
+        byId(id).value = value;
+      }
+      byId("model-period").textContent = `${rec.p.totalHours} Azure-evaluated hours; ${dateFormat.format(new Date(rec.p.firstConsumptionDate))} - ${dateFormat.format(new Date(rec.p.lastConsumptionDate))}`;
+      byId("model-source").textContent = `${skuLabel(rec.p.armSkuName)}; ${termLabel(rec.p.term)}; ${rec.p.currencyCode}; ${rec.scope}; Shared; ${rec.p.lookBackPeriod}. Option ${Number(byId("model-option").value) + 1} of ${rec.options.length}${Number(byId("model-option").value) === rec.recommendedIndex ? " - Azure highlighted" : ""}. Exact evaluated commitments only.`;
+      byId("coverage-source").textContent = `Azure modeled ${rec.p.armSkuName} coverage for ${rec.scope}, ${rec.p.term}. Not a like-for-like comparison with current compute coverage.`;
+    }
+    function selectRecommendation(index) {
+      const rec = recommendations[index];
+      if (!rec) return;
+      byId("model-term").value = rec.p.term;
+      byId("model-plan").value = String(index);
+      for (const option of byId("model-plan").options) option.hidden = recommendations[Number(option.value)].p.term !== rec.p.term;
+      byId("model-option").max = String(rec.options.length - 1);
+      byId("model-option").value = String(rec.recommendedIndex);
+      renderScenario();
+    }
+    function renderRecommendations() {
+      const rows = [];
+      const choices = [];
+      recommendations.forEach((rec, index) => {
+        const d = rec.options[rec.recommendedIndex];
+        const row = element("tr");
+        const name = element("td", skuLabel(rec.p.armSkuName));
+        name.append(element("span", `${rec.scope}; Shared; ${rec.p.currencyCode}`, "cell-note"));
+        const savings = element("td", money(d.savingsAmount, rec.p.currencyCode));
+        savings.append(element("span", `${rec.p.totalHours} evaluated hours; Azure estimate`, "cell-note"));
+        const action = element("td");
+        const button = element("button", "Explore", "secondary");
+        button.type = "button";
+        button.addEventListener("click", () => {
+          selectRecommendation(index);
+          activateTab("modeler");
+        });
+        action.append(button);
+        row.append(name, element("td", termLabel(rec.p.term)), element("td", `${money(d.commitmentAmount, rec.p.currencyCode, 3)} / hour`), savings,
+          element("td", percentFormat.format(percentage(d.coveragePercentage, "coveragePercentage") / 100)), action);
+        rows.push(row);
+        const option = element("option", `${skuLabel(rec.p.armSkuName)} / ${rec.scope.split("/").at(-1)} / ${rec.p.currencyCode}`);
+        option.value = String(index);
+        choices.push(option);
+      });
+      if (!rows.length) return;
+      byId("azure-recommendations").replaceChildren(...rows);
+      byId("model-plan").replaceChildren(...choices);
+      for (const id of ["model-plan", "model-term", "model-option", "model-recommended"]) byId(id).disabled = false;
+      for (const option of byId("model-term").options) option.disabled = !recommendations.some((rec) => rec.p.term === option.value);
+      selectRecommendation(0);
+    }
+    function renderAzureUtilization(records, start, end) {
+      const rows = [];
+      const seen = new Set();
+      const ordered = records.slice().sort((a, b) => String(b.record?.properties?.usageDate).localeCompare(String(a.record?.properties?.usageDate)));
+      for (const { record, scope } of ordered) {
+        if (record?.kind !== "SavingsPlan") continue;
+        const p = record.properties;
+        if (!p || typeof p.benefitId !== "string" || !p.benefitId || typeof p.usageDate !== "string" ||
+            !Number.isFinite(Date.parse(p.usageDate)) || typeof p.armSkuName !== "string") throw new Error("Azure returned incomplete daily benefit utilization.");
+        const day = new Date(p.usageDate);
+        if (day < start || day >= end) continue;
+        const key = JSON.stringify([scope.toLowerCase(), p.benefitId.toLowerCase(), day.toISOString().slice(0, 10)]);
+        if (seen.has(key)) throw new Error("Azure returned duplicate daily benefit utilization.");
+        seen.add(key);
+        const values = ["avgUtilizationPercentage", "minUtilizationPercentage", "maxUtilizationPercentage"].map((name) => percentage(p[name], name));
+        if (values[1] > values[0] + 0.000001 || values[0] > values[2] + 0.000001) throw new Error("Azure daily utilization minimum, average and maximum are inconsistent.");
+        const row = element("tr");
+        const identity = element("td", p.armSkuName);
+        identity.append(element("code", p.benefitId, "plan-id"), element("span", scope, "cell-note"));
+        row.append(identity, element("td", dateFormat.format(day)));
+        for (const value of values) row.append(element("td", percentFormat.format(value / 100)));
+        rows.push(row);
+      }
+      if (rows.length) byId("azure-utilization").replaceChildren(...rows);
+      else messageRow("azure-utilization", "Azure returned no savings-plan daily records for the last 30 completed UTC days. This does not establish purchased-plan inventory.", 5);
+      return rows.length;
+    }
+    function resetBenefits() {
+      recommendations = [];
+      for (const id of ["model-plan", "model-term", "model-option", "model-recommended"]) byId(id).disabled = true;
+      byId("model-plan").replaceChildren(element("option", "Unavailable"));
+      byId("model-option").max = "0";
+      byId("model-option").value = "0";
+      byId("model-option").removeAttribute("aria-valuetext");
+      for (const id of ["model-commitment", "model-savings", "model-wastage", "model-utilization", "model-without", "model-with"]) byId(id).textContent = "\u2014";
+      byId("model-coverage").textContent = "Unavailable";
+      byId("coverage-source").textContent = "No current Azure scenario is loaded. No modeled coverage is substituted.";
+      byId("model-period").textContent = "Awaiting Azure-evaluated scenarios";
+      byId("model-source").textContent = "Actual evaluated-period totals only; no monthly extrapolation.";
+      byId("bar-without").value = 0;
+      byId("bar-with").value = 0;
+      byId("recommendation-note").textContent = "Loading Azure recommendations; no saved or synthetic alternatives are used.";
+      byId("benefit-utilization-note").textContent = "Loading daily Azure benefit utilization; purchased-plan inventory is unavailable.";
+      messageRow("azure-recommendations", "Loading Azure Benefit Recommendations...", 6);
+      messageRow("azure-utilization", "Loading Azure benefit utilization...", 5);
+    }
+    function benefitsUnavailable(message) {
+      byId("recommendation-note").textContent = `Azure recommendations unavailable: ${message}`;
+      byId("benefit-utilization-note").textContent = `Azure benefit utilization unavailable: ${message}. Purchased-plan inventory is not exposed.`;
+      messageRow("azure-recommendations", `Unavailable: ${message}`, 6);
+      messageRow("azure-utilization", `Unavailable: ${message}`, 5);
+    }
+    async function loadBenefits(start, end) {
+      const scopeQuery = `Costs() | where ChargePeriodStart >= ago(7d) | summarize Rows=count(), Latest=max(ChargePeriodStart) by BillingAccountId, x_BillingProfileId, BillingCurrency`;
+      const scopeRows = parseToolResult(await window.sreagent.callTool(TOOL_NAME, { "cluster-uri": CLUSTER_URI, database: DATABASE, query: scopeQuery }));
+      const scopes = [...new Set(scopeRows.flatMap((row) => [row.BillingAccountId, row.x_BillingProfileId]).filter((scope) =>
+        typeof scope === "string" && /^\/providers\/microsoft\.billing\/billingaccounts\/[^/]+\/billingprofiles\/[^/]+$/i.test(scope)).map((scope) => scope.toLowerCase()))];
+      if (!scopes.length) throw new Error("Costs() returned no full MCA billing-profile resource scope. No subscription-scope recommendation is substituted.");
+      byId("scope").textContent = `Azure benefit scopes discovered from recent Costs() records: ${scopes.join("; ")}. Observed costs include all scopes visible to the Hub.`;
+      const jobs = scopes.flatMap((scope) => [
+        ...["P3Y", "P1Y"].map((term) => ({ scope, term, type: "recommendation" })),
+        { scope, type: "utilization" }
+      ]);
+      const responses = await Promise.allSettled(jobs.map(async (job) => {
+        if (job.type === "recommendation") {
+          const raw = await window.sreagent.callTool(RECOMMENDATION_TOOL, {
+            scope: job.scope, recommendationScope: "Shared", term: job.term, lookBackPeriod: "Last30Days", expand: true
+          });
+          const records = benefitRecords(raw).map((record) => normalizeRecommendation(record, job.scope, job.term)).filter(Boolean);
+          if (new Set(records.map((rec) => rec.p.armSkuName)).size !== records.length) throw new Error("Azure returned overlapping recommendations for the same plan type and term.");
+          return records;
+        }
+        const raw = await window.sreagent.callTool(UTILIZATION_TOOL, { scope: job.scope, grain: "Daily" });
+        return benefitRecords(raw).map((record) => ({ record, scope: job.scope }));
+      }));
+      const recommendationErrors = [];
+      const utilizationErrors = [];
+      const utilizationRecords = [];
+      responses.forEach((response, index) => {
+        const job = jobs[index];
+        if (response.status === "fulfilled") {
+          if (job.type === "recommendation") recommendations.push(...response.value);
+          else utilizationRecords.push(...response.value);
+        } else {
+          const message = `${job.scope}${job.term ? ` / ${job.term}` : ""}: ${response.reason instanceof Error ? response.reason.message : String(response.reason)}`;
+          (job.type === "recommendation" ? recommendationErrors : utilizationErrors).push(message);
+          console.error("Azure benefit source failed:", message);
+        }
+      });
+      renderRecommendations();
+      if (!recommendations.length) messageRow("azure-recommendations", recommendationErrors.length
+        ? "Azure recommendations unavailable. Missing or invalid responses are not evidence of no opportunity."
+        : "Azure returned no savings-plan recommendations for the discovered profiles, Shared scope, P1Y/P3Y terms, and Last30Days.", 6);
+      byId("recommendation-note").textContent = `${recommendations.length} complete Azure recommendations loaded. Only actual expanded alternatives are selectable. Azure estimates are not guaranteed savings.${recommendationErrors.length ? ` Unavailable requests: ${recommendationErrors.join("; ")}` : ""}`;
+      let utilizationCount = 0;
+      try {
+        utilizationCount = renderAzureUtilization(utilizationRecords, start, end);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        utilizationErrors.push(message);
+        console.error("Azure utilization response is invalid:", error);
+        messageRow("azure-utilization", `Unavailable: ${message}`, 5);
+      }
+      byId("benefit-utilization-note").textContent = `${utilizationCount} daily Azure benefit utilization records shown for the last 30 completed UTC days. Percentages are returned by Azure, not inferred from costs. Purchased-plan inventory is not exposed.${utilizationErrors.length ? ` Unavailable requests: ${utilizationErrors.join("; ")}` : ""}`;
+      if (utilizationErrors.length && !utilizationRecords.length) messageRow("azure-utilization", "Azure benefit utilization unavailable. Failed requests do not establish an absence of benefits.", 5);
+      return [...recommendationErrors, ...utilizationErrors];
     }
     function tableMessage(text) {
       const cell = element("td", text, "message");
@@ -316,7 +635,7 @@
         const value = utilization(row, 7);
         if (value !== null) values.push(value);
         const identityCell = document.createElement("td");
-        identityCell.append(element("span", row.PlanName || "Observed savings plan", "plan-name"),
+        identityCell.append(element("span", "Observed savings plan", "plan-name"),
           element("code", row.BenefitId, "plan-id"),
           element("span", `Account: ${row.Account || "Not reported"}; profile: ${row.Profile || "Not reported"}`, "cell-note"));
         const latest = element("td", dateFormat.format(new Date(row.LatestUsage)), "number");
@@ -344,6 +663,8 @@
       byId("period").textContent = "Loading reporting period...";
       byId("plans").setAttribute("aria-busy", "true");
       tableMessage("Loading live cost records...");
+      resetBenefits();
+      byId("scope").textContent = "Observed costs: all scopes visible to the Hub. Azure benefit billing profiles are being discovered from recent Costs() records.";
       try {
         const cluster = new URL(CLUSTER_URI);
         if (cluster.protocol !== "https:" || cluster.username || cluster.password || cluster.pathname !== "/" || cluster.search || cluster.hash) {
@@ -362,7 +683,7 @@ Costs()
 | where CommitmentDiscountType == 'Savings Plan' and ChargeCategory == 'Usage'
 | where CommitmentDiscountStatus in ('Used', 'Unused') and isnotempty(CommitmentDiscountId)
 | extend InvalidCost = isnull(EffectiveCost) or not(isfinite(EffectiveCost)) or EffectiveCost < 0
-| summarize PlanName = take_any(CommitmentDiscountName), LatestUsage = max(ChargePeriodStart),
+| summarize LatestUsage = max(ChargePeriodStart),
     Used30 = sumif(EffectiveCost, CommitmentDiscountStatus == 'Used'),
     Unused30 = sumif(EffectiveCost, CommitmentDiscountStatus == 'Unused'),
     Invalid30 = countif(InvalidCost), Records30 = count(),
@@ -378,12 +699,39 @@ Costs()
 | project-away Reported7, Reported30
 | order by Account asc, Profile asc, BenefitId asc, Currency asc`;
         byId("source-target").textContent = `Kusto target: ${cluster.origin} / ${DATABASE}; tool: ${TOOL_NAME}.`;
-        const raw = await window.sreagent.callTool(TOOL_NAME, { "cluster-uri": CLUSTER_URI, database: DATABASE, query });
-        render(parseToolResult(raw));
-        byId("period").textContent = `${dateFormat.format(start)} - ${dateFormat.format(new Date(end.getTime() - 86400000))} (UTC)`;
+        const results = await Promise.allSettled([
+          (async () => {
+            const raw = await window.sreagent.callTool(TOOL_NAME, { "cluster-uri": CLUSTER_URI, database: DATABASE, query });
+            render(parseToolResult(raw));
+            byId("period").textContent = `${dateFormat.format(start)} - ${dateFormat.format(new Date(end.getTime() - 86400000))} (UTC)`;
+          })(),
+          loadBenefits(start, end)
+        ]);
+        const failures = [];
+        if (results[0].status === "rejected") {
+          const error = results[0].reason;
+          tableMessage("Observed cost utilization is unavailable. No cached or substitute results are displayed.");
+          byId("period").textContent = "Observed cost period unavailable";
+          failures.push(`Observed costs: ${error instanceof Error ? error.message : String(error)}`);
+          console.error("Observed cost source failed:", error);
+        }
+        if (results[1].status === "rejected") {
+          const error = results[1].reason;
+          const message = error instanceof Error ? error.message : String(error);
+          resetBenefits();
+          benefitsUnavailable(message);
+          failures.push(`Azure benefits: ${message}`);
+          console.error("Azure benefit source failed:", error);
+        } else {
+          failures.push(...results[1].value);
+        }
         byId("refreshed").textContent = `Refreshed ${new Date().toLocaleTimeString()}`;
-        byId("status").textContent = "Observed utilization loaded; Azure recommendations and inventory unavailable";
-        byId("status").dataset.state = "ready";
+        byId("status").textContent = failures.length ? "Some live sources unavailable" : "Live sources loaded; purchased-plan inventory unavailable";
+        byId("status").dataset.state = failures.length ? "error" : "ready";
+        if (failures.length) {
+          byId("error-detail").textContent = failures.join("; ");
+          byId("error").hidden = false;
+        }
       } catch (error) {
         byId("plan-count").textContent = "\u2014";
         byId("lowest").textContent = "\u2014";
@@ -393,6 +741,7 @@ Costs()
         byId("period").textContent = "Reporting period unavailable";
         byId("error-detail").textContent = error instanceof Error ? error.message : String(error);
         byId("error").hidden = false;
+        benefitsUnavailable(byId("error-detail").textContent);
         console.error("Savings-plan Live Report failed:", error);
       } finally {
         byId("plans").setAttribute("aria-busy", "false");
@@ -400,6 +749,26 @@ Costs()
         button.textContent = "Refresh data";
       }
     }
+    function activateTab(tab) {
+      document.querySelectorAll("[data-tab]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.tab === tab);
+        if (button.dataset.tab === tab) button.setAttribute("aria-current", "page");
+        else button.removeAttribute("aria-current");
+      });
+      document.querySelectorAll("[data-tab-panel]").forEach((panel) => panel.classList.toggle("active", panel.dataset.tabPanel === tab));
+    }
+    document.querySelectorAll("[data-tab]").forEach((button) => button.addEventListener("click", () => activateTab(button.dataset.tab)));
+    byId("model-plan").addEventListener("change", () => selectRecommendation(Number(byId("model-plan").value)));
+    byId("model-term").addEventListener("change", () => {
+      const previous = recommendations[Number(byId("model-plan").value)];
+      const term = byId("model-term").value;
+      let index = recommendations.findIndex((rec) => rec.p.term === term && rec.scope === previous?.scope &&
+        rec.p.armSkuName === previous?.p.armSkuName && rec.p.currencyCode === previous?.p.currencyCode);
+      if (index < 0) index = recommendations.findIndex((rec) => rec.p.term === term);
+      if (index >= 0) selectRecommendation(index);
+    });
+    byId("model-option").addEventListener("input", renderScenario);
+    byId("model-recommended").addEventListener("click", () => selectRecommendation(Number(byId("model-plan").value)));
     byId("refresh").addEventListener("click", refresh);
     refresh();
   </script>
