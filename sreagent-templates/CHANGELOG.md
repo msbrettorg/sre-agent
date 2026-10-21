@@ -12,6 +12,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Labeled VM usage coverage in vCPU-hours and added separate reservation and
+  savings-plan effective-cost amounts and spend-share percentages for the same
+  cohort. Both sides of spend share use `EffectiveCost`; Azure modeled coverage
+  is labeled separately on its pre-discount cost basis.
+- Replaced the mixed-price compute cost ratio with an authored VM core-hour
+  usage-coverage proxy. Reservations and savings plans are displayed separately,
+  Spot is excluded, and source validation gates the returned percentage.
+- Added observed commitment cost and waste dollars, an Azure-evaluated
+  no-purchase/lower/highlighted decision comparison, and historical evaluation
+  periods to the savings-plan report.
+- Simplified all five desktop savings-plan views with consistent typography,
+  larger metrics, readable financial tables, and compact modeler controls
+  for executive review without external assets or dependencies.
+- Removed operational badges, implementation details, and prescriptive
+  approval messaging from the savings-plan report UI.
 - Documented FinOps Hubs deployment output, token recovery, existing-agent
   preservation limits, the private-only Kusto connector limitation, and
   the minimal-agent alternative and scheduled-task limitations without a Hub.
@@ -30,6 +45,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   plugin sources resolve during unattended deployments.
 
 ### Fixed
+- Made the local emulator return hosted text-content responses, enforce
+  per-report tool approvals from a shared manifest, and preserve the hosted CSP
+  and nonce. Updated both report parsers and aligned the recipe bridge with the
+  agent bridge's existing Az PowerShell authentication and benefit-tool support.
+- Added hosted text-content response handling to both portable savings-plan
+  reports, preserving Kusto tables with incidental `result` fields and exposing
+  response-key diagnostics. Documented required report tool approvals and the
+  destination-agent save/version lifecycle.
 - Restored Bash deployment's extras handoff through the supported PowerShell
   lifecycle, with prerequisite checks before Azure writes and explicit partial
   deployment failures when required data-plane items are skipped.

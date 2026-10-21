@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -8,16 +8,10 @@ import { fileURLToPath } from "node:url";
 
 const execFileAsync = promisify(execFile);
 const root = dirname(fileURLToPath(import.meta.url));
-const cockpitReportPath = join(root, "FinOps-Hub-MTD-KPI-Cockpit.local.html");
-const savingsPlansReportPath = join(root, "FinOps-Hub-Savings-Plans.local.html");
-const reportRoutes = new Map([
-  ["/", cockpitReportPath],
-  ["/report.local.html", cockpitReportPath],
-  ["/FinOps-Hub-MTD-KPI-Cockpit.local.html", cockpitReportPath],
-  ["/savings-plans", savingsPlansReportPath],
-  ["/savings-plans.local.html", savingsPlansReportPath],
-  ["/FinOps-Hub-Savings-Plans.local.html", savingsPlansReportPath],
-]);
+const reports = JSON.parse(await readFile(join(root, "local-reports.json"), "utf8"));
+const reportRoutes = new Map(reports.flatMap((report) =>
+  report.routes.map((route) => [route, join(root, report.output)])));
+const reportPolicies = new Map(reports.map((report) => [report.id, new Set(report.allowedTools)]));
 const host = "127.0.0.1";
 const port = Number.parseInt(process.env.PORT || "4174", 10);
 const tenant = process.env.AZURE_TENANT_ID || "";
@@ -81,6 +75,10 @@ function sendJson(response, status, payload) {
     "X-Content-Type-Options": "nosniff",
   });
   response.end(body);
+}
+
+function hostedToolResult(payload) {
+  return { $type: "text", text: JSON.stringify(payload), annotations: null, additionalProperties: {} };
 }
 
 function tokenExpiry(payload) {
@@ -322,22 +320,29 @@ async function handleQuery(request, response) {
     });
   }
 
-  if (![toolName, recommendationTool, utilizationTool].includes(body?.name)) {
+  if (!reportPolicies.get(body?.report)?.has(body?.name) ||
+      ![toolName, recommendationTool, utilizationTool].includes(body?.name)) {
     return sendJson(response, 403, {
-      error: `Tool is not allowed: ${String(body?.name || "")}`,
+      error: `Tool is not approved for report ${String(body?.report || "")}: ${String(body?.name || "")}`,
     });
   }
 
   const args = body.args;
   if (body.name !== toolName) {
     try {
-      return sendJson(response, 200, await executeBenefit(body.name, args));
+      return sendJson(response, 200, hostedToolResult(await executeBenefit(body.name, args)));
     } catch (error) {
       console.error(`[benefits] ${error instanceof Error ? error.message : String(error)}`);
       return sendJson(response, 502, {
         error: error instanceof Error ? error.message : "Azure benefit query failed.",
       });
     }
+  }
+  if (!args || typeof args !== "object" || Array.isArray(args) ||
+      Object.keys(args).some((key) => !["cluster-uri", "database", "query"].includes(key))) {
+    return sendJson(response, 400, {
+      error: "Only cluster-uri, database, and query Kusto arguments are supported.",
+    });
   }
   let requestedCluster;
   try {
@@ -364,7 +369,7 @@ async function handleQuery(request, response) {
   }
 
   try {
-    return sendJson(response, 200, await executeKusto(args.query));
+    return sendJson(response, 200, hostedToolResult(await executeKusto(args.query)));
   } catch (error) {
     console.error(
       `[kusto] ${error instanceof Error ? error.message : String(error)}`,
@@ -420,6 +425,8 @@ const server = createServer(async (request, response) => {
       subscription: subscription || "Not configured",
       toolName,
       benefitTools: [recommendationTool, utilizationTool],
+      responseFormat: "hosted-text",
+      reports: reports.map(({ id, allowedTools }) => ({ id, allowedTools })),
     });
   }
   if (url.pathname === "/api/kusto/query") {

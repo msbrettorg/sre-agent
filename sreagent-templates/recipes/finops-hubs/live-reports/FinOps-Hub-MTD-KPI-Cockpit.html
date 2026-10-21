@@ -927,11 +927,34 @@ freshness
       byId('canonical-refresh').addEventListener('click', refreshCanonicalPage);
     }
 
-    function parseToolResult(raw) {
+    function unwrapToolResult(raw, source) {
       let payload = raw;
-      for (let i = 0; i < 2 && typeof payload === 'string'; i += 1) payload = JSON.parse(payload);
-      const items = payload && payload.results && payload.results.items ? payload.results.items : (payload && payload.items ? payload.items : []);
-      if (!Array.isArray(items) || items.length === 0) return [];
+      for (let depth = 0; depth < 8; depth += 1) {
+        if (typeof payload === 'string') {
+          payload = JSON.parse(payload);
+          continue;
+        }
+        if (payload?.isError || payload?.error || payload?.Exceptions?.length || (typeof payload?.status === 'number' && payload.status >= 400)) {
+          throw new Error(`${source} tool returned an error: ` + JSON.stringify(payload));
+        }
+        if (Array.isArray(payload?.results?.items) || Array.isArray(payload?.items)) return payload;
+        if (payload?.structuredContent !== undefined) payload = payload.structuredContent;
+        else if (payload?.result !== undefined) payload = payload.result;
+        else if (Array.isArray(payload?.content)) {
+          const text = payload.content.find((entry) => (entry?.type === 'text' || entry?.$type === 'text') && typeof entry.text === 'string');
+          if (!text) throw new Error(`${source} response has no text result.`);
+          payload = text.text;
+        } else if (typeof payload?.text === 'string') payload = payload.text;
+        else if (payload?.additionalProperties?.results?.items) payload = payload.additionalProperties;
+        else return payload;
+      }
+      throw new Error(`${source} response exceeds the supported nesting depth.`);
+    }
+    function parseToolResult(raw) {
+      const payload = unwrapToolResult(raw, 'Kusto');
+      const items = payload?.results?.items ?? payload?.items;
+      if (!Array.isArray(items)) throw new Error(`The Kusto tool did not return a result table (response keys: ${Object.keys(payload ?? {}).join(', ') || 'none'}).`);
+      if (items.length === 0) return [];
       const header = items[0];
       if (header && !Array.isArray(header) && typeof header === 'object') {
         const keys = Object.keys(header);

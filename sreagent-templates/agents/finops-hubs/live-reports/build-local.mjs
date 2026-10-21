@@ -4,16 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(fileURLToPath(import.meta.url));
-const reports = [
-  {
-    source: join(root, "FinOps-Hub-MTD-KPI-Cockpit.html"),
-    output: join(root, "FinOps-Hub-MTD-KPI-Cockpit.local.html"),
-  },
-  {
-    source: join(root, "FinOps-Hub-Savings-Plans.html"),
-    output: join(root, "FinOps-Hub-Savings-Plans.local.html"),
-  },
-];
+const reports = JSON.parse(await readFile(join(root, "local-reports.json"), "utf8"));
 const bridgePath = join(root, "live-sreagent.js");
 const clusterPlaceholder = "REPLACE_WITH_FINOPS_HUB_CLUSTER_URI";
 const applicationScriptMarker =
@@ -57,8 +48,18 @@ if (bridgeScript.includes("</script>")) {
 }
 
 for (const report of reports) {
-  const rawSourceHtml = await readFile(report.source, "utf8");
+  const rawSourceHtml = await readFile(join(root, report.source), "utf8");
   const sourceHtml = rawSourceHtml.replaceAll("\r\n", "\n");
+  const csp = sourceHtml.match(/<meta\b[^>]*http-equiv="Content-Security-Policy"[^>]*content="([^"]+)"/)?.[1];
+  if (!csp?.includes("'nonce-{REPORT_NONCE}'") || !csp.includes("connect-src 'self'")) {
+    throw new Error(`${report.source} must retain the hosted CSP and report nonce.`);
+  }
+  const reportBridge = replaceOnce(
+    bridgeScript,
+    "__LOCAL_REPORT_CONFIG__",
+    JSON.stringify({ report: report.id, allowedTools: report.allowedTools }),
+    "local report configuration",
+  );
 
   let localHtml = replaceOnce(
     sourceHtml,
@@ -75,7 +76,7 @@ for (const report of reports) {
   localHtml = replaceOnce(
     localHtml,
     applicationScriptMarker,
-    `<script nonce="{REPORT_NONCE}">\n${bridgeScript}\n</script>\n\n${applicationScriptMarker}`,
+    `<script nonce="{REPORT_NONCE}">\n${reportBridge}\n</script>\n\n${applicationScriptMarker}`,
     `application script marker in ${report.source}`,
   );
   localHtml = localHtml.replaceAll(
@@ -83,6 +84,7 @@ for (const report of reports) {
     randomBytes(18).toString("base64"),
   );
 
-  await writeFile(report.output, localHtml);
-  console.log(`Generated ${report.output}`);
+  const output = join(root, report.output);
+  await writeFile(output, localHtml);
+  console.log(`Generated ${output}`);
 }
