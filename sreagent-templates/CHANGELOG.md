@@ -27,9 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for executive review without external assets or dependencies.
 - Removed operational badges, implementation details, and prescriptive
   approval messaging from the savings-plan report UI.
-- Documented FinOps Hubs deployment output, token recovery, existing-agent
-  preservation limits, the private-only Kusto connector limitation, and
-  the minimal-agent alternative and scheduled-task limitations without a Hub.
 - Added the portable `FinOps-Hub-Savings-Plans.html` Live Report and local preview support in `live-reports/`.
 - Added 15 live-tested FinOps Hub `Quota()` Kusto tools for quota usage,
   headroom, SKU restrictions, availability-zone mappings, and capacity
@@ -53,17 +50,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reports, preserving Kusto tables with incidental `result` fields and exposing
   response-key diagnostics. Documented required report tool approvals and the
   destination-agent save/version lifecycle.
-- Restored Bash deployment's extras handoff through the supported PowerShell
-  lifecycle, with prerequisite checks before Azure writes and explicit partial
-  deployment failures when required data-plane items are skipped.
-- Restricted native Bicep deployment cleanup to its own two generated files
-  rather than recursively removing the system temporary directory.
-- Streamed Bash assembly JSON rather than passing large payloads as process
-  arguments, including inline tool content and resolved skill references.
-- Propagated verification failures through both deploy backends. Data-plane
-  HTTP and invalid-JSON errors no longer appear as empty configuration.
-- Preserved Bash verifier token diagnostics; the PowerShell verifier retains
-  Az PowerShell error details from its native REST helper.
 - Removed the invalid `finops-hubs` MACC Kusto proxy and required all specialist
   agents to treat MACC billing-contract evidence as distinct from reservations,
   savings plans, capacity reservations, and commitment-discount analytics.
@@ -84,10 +70,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deployments aren't reported as failed.
 
 ### Testing
-- Added offline PowerShell deployment handoff, failure, preflight, and cleanup
-  regressions and required them in template validation CI.
-- Added focused PowerShell regression checks for native verification failures
-  and deployment status propagation.
 - Added focused four-backend dry-run coverage for the `finops-hubs` recipe.
 
 ## [1.0.0] — 2026-05-07
