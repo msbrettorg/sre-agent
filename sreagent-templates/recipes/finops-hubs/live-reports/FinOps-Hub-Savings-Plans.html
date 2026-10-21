@@ -1,2236 +1,407 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <!--
-    SINGLE-FILE PORTABLE LIVE REPORT — FinOps Hub Savings Plans & Purchase Simulator
-    Upload target: Azure SRE Agent → Live Reports
-    Required setup before upload:
-      1. Replace the CLUSTER_URI placeholder with the destination FinOps Hub ADX cluster URI.
-      2. Confirm the agent's Kusto connector is authorized for that cluster and the Hub database.
-    Visual direction:
-      - Warm daylight ledger paper (#F6F5F1) with crisp white surfaces (#FFFFFF) and hairline slate borders (#E2E5EC).
-      - Tabular-nums monospace precision for commitments, hourly rates, utilization percentages, and KQL-derived figures.
-  -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="
-    default-src 'none';
-    script-src 'self' 'nonce-{REPORT_NONCE}';
-    style-src 'self' 'unsafe-inline';
-    font-src 'self' data:;
-    img-src 'self' data: blob:;
-    connect-src 'self';
-  ">
-  <title>FinOps Hub — Compute Savings Plans &amp; Purchase Simulator</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'nonce-{REPORT_NONCE}'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>Savings plans</title>
   <style>
     :root {
-      --bg-canvas: #F6F5F1;
-      --bg-surface: #FFFFFF;
-      --bg-subtle: #F0EFEA;
-      --bg-tinted: #EEF3FA;
-      --ink-primary: #11161F;
-      --ink-secondary: #434C5E;
-      --ink-muted: #6C7689;
-      --border-hairline: #E2E5EC;
-      --border-strong: #C6CCD8;
-      --accent-azure: #0F56B3;
-      --accent-azure-soft: #E6EFFC;
-      --status-good: #0E6B45;
-      --status-good-bg: #E7F5EE;
-      --status-warn: #9A5B00;
-      --status-warn-bg: #FDF3E1;
-      --status-risk: #B42318;
-      --status-risk-bg: #FDECEB;
-      --font-sans: "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-      --font-mono: "Cascadia Mono", "SFMono-Regular", Consolas, ui-monospace, monospace;
+      color-scheme: light;
+      --ink: #16233a;
+      --muted: #52647d;
+      --line: #dce4ef;
+      --paper: #f6f8fc;
+      --card: #fff;
+      --blue: #0864ca;
+      --green: #116d58;
+      --red: #a1253a;
     }
-
-    * {
-      box-sizing: border-box;
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    main { width: min(1280px, 100%); margin: 0 auto; padding: 48px 32px; }
+    header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
+    h1 { margin: 0; font-size: 34px; line-height: 1.2; letter-spacing: -.025em; }
+    h2 { margin: 0; font-size: 19px; letter-spacing: -.015em; }
+    p { margin: 0; }
+    .intro { margin-top: 10px; max-width: 70ch; color: var(--muted); }
+    button { min-height: 44px; padding: 10px 20px; border: 1px solid var(--blue); border-radius: 8px; color: #fff; background: var(--blue); font: inherit; font-weight: 650; cursor: pointer; white-space: nowrap; }
+    button:hover { background: #0756ad; }
+    button:disabled { cursor: wait; background: #52647d; border-color: #52647d; }
+    :focus-visible { outline: 3px solid var(--blue); outline-offset: 4px; }
+    .source-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 20px; margin: 24px 0 18px; color: var(--muted); font-size: 13px; }
+    #status { color: var(--ink); font-weight: 650; }
+    #status[data-state="ready"] { color: var(--green); }
+    #status[data-state="error"] { color: var(--red); }
+    .scope { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+    .metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 28px 0 36px; border-block: 1px solid var(--line); background: var(--card); }
+    .metric { min-width: 0; padding: 24px; }
+    .metric + .metric { border-left: 1px solid var(--line); }
+    .metric-label { color: var(--muted); font-size: 14px; }
+    .metric-value { margin: 8px 0 6px; font-size: 34px; font-weight: 700; line-height: 1.2; letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
+    .metric-note { color: var(--muted); font-size: 12px; }
+    .section-title { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    #period { color: var(--muted); font-size: 13px; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    caption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    th { background: #edf2f8; color: var(--muted); font-size: 12px; font-weight: 650; }
+    th, td { padding: 18px 20px; vertical-align: top; }
+    tbody tr + tr { border-top: 1px solid var(--line); }
+    .plan-name { font-weight: 650; }
+    .plan-id { display: block; margin-top: 5px; font: 11px/1.6 ui-monospace, "Cascadia Mono", monospace; color: var(--muted); overflow-wrap: anywhere; }
+    .average { display: block; margin-bottom: 9px; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    progress { display: block; width: 160px; max-width: 100%; height: 7px; accent-color: var(--blue); border: 0; border-radius: 4px; background: #e3eaf4; }
+    progress::-webkit-progress-bar { border-radius: 4px; background: #e3eaf4; }
+    progress::-webkit-progress-value { border-radius: 4px; background: var(--blue); }
+    progress::-moz-progress-bar { border-radius: 4px; background: var(--blue); }
+    .number { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .cell-note { display: block; margin-top: 5px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+    .message { padding: 32px 24px; color: var(--muted); }
+    .error { margin: 20px 0; padding: 20px; background: #fff4f6; border: 1px solid #dfadb6; border-radius: 8px; color: var(--red); overflow-wrap: anywhere; }
+    .error strong { display: block; margin-bottom: 6px; }
+    .error p + p { margin-top: 8px; }
+    #data-note { margin-top: 16px; max-width: 75ch; color: var(--muted); font-size: 13px; }
+    details { margin-top: 30px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+    summary { display: inline-flex; align-items: center; min-height: 44px; cursor: pointer; color: var(--ink); font-size: 13px; font-weight: 600; }
+    details p { margin: 8px 0; max-width: 85ch; overflow-wrap: anywhere; }
+    code { font-family: ui-monospace, "Cascadia Mono", monospace; font-size: 11px; overflow-wrap: anywhere; }
+    nav { display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 20px; border-bottom: 1px solid var(--line); }
+    nav a { display: inline-flex; min-height: 44px; align-items: center; color: var(--blue); text-decoration: none; font-weight: 600; font-size: 14px; }
+    nav a:hover { text-decoration: underline; }
+    .section { margin-top: 36px; scroll-margin-top: 24px; }
+    .section-copy { margin: 8px 0 18px; max-width: 85ch; color: var(--muted); font-size: 13px; }
+    .model { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 32px; padding: 24px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+    .controls { display: grid; align-content: start; gap: 18px; }
+    label { display: block; font-size: 13px; font-weight: 600; }
+    select { display: block; width: 100%; min-height: 44px; margin-top: 6px; padding: 8px 10px; border: 1px solid #a1afc2; border-radius: 6px; background: var(--card); color: var(--ink); font: inherit; }
+    input[type="range"] { width: 100%; min-height: 44px; margin: 4px 0 0; accent-color: var(--blue); }
+    .commitment { display: block; margin-top: 6px; font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .control-note { margin-top: 4px; color: var(--muted); font-size: 12px; font-weight: 400; }
+    .secondary { color: var(--blue); background: var(--card); border-color: #b7c9e1; }
+    .secondary:disabled { color: var(--muted); background: var(--paper); border-color: var(--line); cursor: default; }
+    .check { display: flex; align-items: center; min-height: 44px; gap: 10px; }
+    .check input { width: 18px; height: 18px; accent-color: var(--blue); }
+    .outcomes { min-width: 0; }
+    .outcome-strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; padding-bottom: 24px; border-bottom: 1px solid var(--line); }
+    .outcome-value { display: block; margin: 8px 0 4px; font-size: 26px; font-weight: 700; line-height: 1.25; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .positive { color: var(--green); }
+    .comparison { margin-top: 22px; }
+    .comparison-row { margin-top: 18px; }
+    .comparison-label { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 13px; }
+    .bar-track { height: 10px; margin-top: 9px; border-radius: 4px; background: #e7edf6; overflow: hidden; }
+    .model-note { margin-top: 18px; color: var(--muted); font-size: 12px; max-width: 85ch; }
+    .notice { margin: 18px 0; padding: 14px 18px; border: 1px solid #d5bd88; border-radius: 8px; background: #fffaf0; color: #604b21; font-size: 13px; }
+    .coverage-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; padding: 24px; border-block: 1px solid var(--line); background: var(--card); }
+    h3 { margin: 0; font-size: 14px; font-weight: 600; }
+    .coverage-value { display: block; margin: 8px 0; font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .coverage-grid p { max-width: 65ch; color: var(--muted); font-size: 12px; }
+    .scope-note { margin-top: 6px; color: var(--muted); font-size: 12px; }
+    .muted-value { font-size: 22px; color: var(--muted); }
+    [hidden] { display: none !important; }
+    @media (max-width: 1100px) {
+      main { padding: 32px 24px; }
+      .metric { padding: 20px; }
+      .metric-value { font-size: 30px; }
+      th, td { padding: 16px; }
+      progress { width: 128px; }
+      .model { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+      .controls { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 24px; }
+      .check { grid-column: span 2; }
+      .coverage-grid { gap: 24px; }
     }
-
-    html, body {
-      margin: 0;
-      padding: 0;
-      background: var(--bg-canvas);
-      color: var(--ink-primary);
-      font-family: var(--font-sans);
-      font-size: 14px;
-      line-height: 1.45;
-      -webkit-font-smoothing: antialiased;
-    }
-
-    .page {
-      max-width: 1380px;
-      margin: 0 auto;
-      padding: 28px 32px 56px;
-    }
-
-    .top-header {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
-      align-items: flex-end;
-      gap: 16px;
-      padding-bottom: 18px;
-      border-bottom: 1px solid var(--border-strong);
-      margin-bottom: 22px;
-    }
-
-    .eyebrow {
-      font-family: var(--font-mono);
-      font-size: 11px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--accent-azure);
-      margin: 0 0 6px;
-      font-weight: 600;
-    }
-
-    h1 {
-      font-size: 24px;
-      font-weight: 650;
-      letter-spacing: -0.02em;
-      margin: 0;
-      color: var(--ink-primary);
-    }
-
-    .scope-meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 18px;
-      align-items: center;
-      font-size: 12px;
-      color: var(--ink-secondary);
-    }
-
-    .scope-meta .meta-item {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-
-    .scope-meta .meta-label {
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--ink-muted);
-    }
-
-    .scope-meta .meta-value {
-      font-family: var(--font-mono);
-      font-size: 12px;
-      color: var(--ink-primary);
-      font-weight: 500;
-    }
-
-    .btn-refresh {
-      appearance: none;
-      border: 1px solid var(--border-strong);
-      background: var(--bg-surface);
-      color: var(--ink-primary);
-      font-family: var(--font-sans);
-      font-size: 12px;
-      font-weight: 600;
-      padding: 7px 13px;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-
-    .btn-refresh:hover {
-      background: var(--bg-subtle);
-    }
-
-    .summary-strip {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 14px;
-      margin-bottom: 26px;
-    }
-
-    .metric-card {
-      background: var(--bg-surface);
-      border: 1px solid var(--border-hairline);
-      border-radius: 6px;
-      padding: 16px 18px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .metric-label {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--ink-muted);
-      font-weight: 600;
-    }
-
-    .metric-value {
-      font-family: var(--font-mono);
-      font-variant-numeric: tabular-nums;
-      font-size: 26px;
-      font-weight: 650;
-      letter-spacing: -0.02em;
-      color: var(--ink-primary);
-    }
-
-    .metric-sub {
-      font-size: 12px;
-      color: var(--ink-secondary);
-      font-variant-numeric: tabular-nums;
-    }
-
-    .section {
-      background: var(--bg-surface);
-      border: 1px solid var(--border-hairline);
-      border-radius: 6px;
-      margin-bottom: 24px;
-      overflow: hidden;
-    }
-
-    .section-header {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
-      align-items: baseline;
-      gap: 12px;
-      padding: 16px 20px;
-      border-bottom: 1px solid var(--border-hairline);
-      background: var(--bg-subtle);
-    }
-
-    .section-title {
-      font-size: 15px;
-      font-weight: 650;
-      margin: 0;
-      color: var(--ink-primary);
-    }
-
-    .section-subtitle {
-      font-size: 12px;
-      color: var(--ink-secondary);
-      margin: 2px 0 0;
-    }
-
-    .section-body {
-      padding: 20px;
-    }
-
-    .data-table-wrap {
-      overflow-x: auto;
-    }
-
-    table.data-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-    }
-
-    .data-table th {
-      text-align: left;
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--ink-muted);
-      font-weight: 600;
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--border-strong);
-      white-space: nowrap;
-    }
-
-    .data-table td {
-      padding: 12px;
-      border-bottom: 1px solid var(--border-hairline);
-      vertical-align: top;
-      color: var(--ink-primary);
-    }
-
-    .data-table tr:last-child td {
-      border-bottom: none;
-    }
-
-    .data-table th.num,
-    .data-table td.num {
-      text-align: right;
-      font-family: var(--font-mono);
-      font-variant-numeric: tabular-nums;
-      white-space: nowrap;
-    }
-
-    .mono {
-      font-family: var(--font-mono);
-      font-variant-numeric: tabular-nums;
-    }
-
-    .plan-name {
-      font-weight: 600;
-      color: var(--ink-primary);
-    }
-
-    .plan-id {
-      font-family: var(--font-mono);
-      font-size: 11px;
-      color: var(--ink-muted);
-      margin-top: 2px;
-    }
-
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      padding: 2px 8px;
-      border-radius: 3px;
-      font-family: var(--font-mono);
-      font-size: 11px;
-      font-weight: 600;
-      white-space: nowrap;
-    }
-
-    .badge-good {
-      background: var(--status-good-bg);
-      color: var(--status-good);
-    }
-
-    .badge-warn {
-      background: var(--status-warn-bg);
-      color: var(--status-warn);
-    }
-
-    .badge-risk {
-      background: var(--status-risk-bg);
-      color: var(--status-risk);
-    }
-
-    .badge-neutral {
-      background: var(--bg-subtle);
-      color: var(--ink-secondary);
-    }
-
-    .util-bar {
-      width: 110px;
-      height: 6px;
-      background: var(--bg-subtle);
-      border-radius: 3px;
-      overflow: hidden;
-      margin-top: 5px;
-      margin-left: auto;
-    }
-
-    .util-fill {
-      height: 100%;
-      background: var(--status-good);
-    }
-
-    .simulator-grid {
-      display: grid;
-      grid-template-columns: 360px minmax(0, 1fr);
-      gap: 22px;
-      align-items: start;
-    }
-
-    .control-panel {
-      background: var(--bg-subtle);
-      border: 1px solid var(--border-hairline);
-      border-radius: 6px;
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .control-group {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .control-label {
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--ink-secondary);
-      font-weight: 600;
-      display: flex;
-      justify-content: space-between;
-    }
-
-    .segmented {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
-      gap: 6px;
-    }
-
-    .segmented button {
-      appearance: none;
-      border: 1px solid var(--border-strong);
-      background: var(--bg-surface);
-      color: var(--ink-secondary);
-      font-family: var(--font-sans);
-      font-size: 12px;
-      font-weight: 600;
-      padding: 7px 8px;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-
-    .segmented button.active {
-      background: var(--accent-azure);
-      border-color: var(--accent-azure);
-      color: #FFFFFF;
-    }
-
-    select.control-select {
-      width: 100%;
-      border: 1px solid var(--border-strong);
-      background: var(--bg-surface);
-      color: var(--ink-primary);
-      font-family: var(--font-sans);
-      font-size: 12px;
-      font-weight: 600;
-      padding: 7px 8px;
-      border-radius: 4px;
-    }
-
-    input[type="range"] {
-      width: 100%;
-      accent-color: var(--accent-azure);
-    }
-
-    .rec-matrix {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 12px;
-      margin-bottom: 18px;
-    }
-
-    .rec-card {
-      border: 1px solid var(--border-hairline);
-      border-radius: 5px;
-      padding: 13px 14px;
-      background: var(--bg-surface);
-      cursor: pointer;
-      transition: border-color 120ms ease, background-color 120ms ease;
-    }
-
-    .rec-card.selected {
-      border-color: var(--accent-azure);
-      background: var(--accent-azure-soft);
-    }
-
-    .rec-card-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 8px;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--ink-secondary);
-    }
-
-    .rec-card-commit {
-      font-family: var(--font-mono);
-      font-size: 19px;
-      font-weight: 650;
-      color: var(--ink-primary);
-      font-variant-numeric: tabular-nums;
-    }
-
-    .rec-card-meta {
-      margin-top: 6px;
-      font-size: 12px;
-      color: var(--ink-secondary);
-      display: flex;
-      justify-content: space-between;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .projection-box {
-      border: 1px solid var(--border-hairline);
-      border-radius: 6px;
-      padding: 16px 18px;
-      background: var(--bg-surface);
-      margin-bottom: 18px;
-    }
-
-    .projection-grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 14px;
-      margin-top: 12px;
-    }
-
-    .proj-item {
-      padding: 10px 12px;
-      background: var(--bg-subtle);
-      border-radius: 4px;
-    }
-
-    .proj-item .label {
-      font-size: 11px;
-      color: var(--ink-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .proj-item .val {
-      font-family: var(--font-mono);
-      font-variant-numeric: tabular-nums;
-      font-size: 18px;
-      font-weight: 650;
-      margin-top: 3px;
-      color: var(--ink-primary);
-    }
-
-    .proj-item .sub {
-      font-size: 11px;
-      color: var(--ink-secondary);
-      margin-top: 2px;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .callout {
-      padding: 12px 14px;
-      border: 1px solid var(--border-strong);
-      background: var(--bg-tinted);
-      font-size: 12px;
-      color: var(--ink-secondary);
-      border-radius: 4px;
-    }
-
-    .error-banner {
-      padding: 14px 16px;
-      border: 1px solid var(--status-risk);
-      background: var(--status-risk-bg);
-      color: var(--status-risk);
-      border-radius: 5px;
-      margin-bottom: 18px;
-      display: none;
-    }
-
-    @media (max-width: 1060px) {
-      .summary-strip,
-      .projection-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-      .simulator-grid {
-        grid-template-columns: 1fr;
-      }
-      .rec-matrix {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
+    @media (max-width: 640px) {
+      main { padding: 24px 16px; }
+      header { flex-wrap: wrap; }
+      .metrics, .coverage-grid, .outcome-strip, .controls { grid-template-columns: minmax(0, 1fr); }
+      .metric + .metric { border-left: 0; border-top: 1px solid var(--line); }
+      .check { grid-column: auto; }
     }
   </style>
 </head>
 <body>
-  <div class="page">
-    <header class="top-header">
+  <main>
+    <header>
       <div>
-        <p class="eyebrow">Azure FinOps · Compute Savings Plans</p>
-        <h1>Commitment Portfolio &amp; Purchase Modeling</h1>
+        <h1>Savings plans</h1>
+        <p class="intro">Review observed commitment utilization. Azure purchase recommendations are separate from cost history.</p>
       </div>
-      <div class="scope-meta">
-        <div class="meta-item">
-          <span class="meta-label">Billing Scope</span>
-          <span class="meta-value" id="meta-scope">Loading…</span>
-        </div>
-        <div class="meta-item">
-          <span class="meta-label">Hub Cluster</span>
-          <span class="meta-value" id="meta-cluster">—</span>
-        </div>
-        <div class="meta-item">
-          <span class="meta-label">Pricing Matrix</span>
-          <span class="meta-value" id="meta-pricing">—</span>
-        </div>
-        <div class="meta-item">
-          <span class="meta-label">Refreshed</span>
-          <span class="meta-value" id="meta-updated">—</span>
-        </div>
-        <button class="btn-refresh" id="btn-refresh" type="button">Refresh Live Data</button>
-      </div>
+      <button id="refresh" type="button">Refresh data</button>
     </header>
-
-    <div class="error-banner" id="error-banner" role="alert"></div>
-
-    <section class="summary-strip" id="summary-strip" aria-label="Portfolio summary">
-      <div class="metric-card">
-        <span class="metric-label">Active Plans</span>
-        <span class="metric-value" id="kpi-active-plans">—</span>
-        <span class="metric-sub" id="kpi-active-plans-sub">Querying FinOps Hub Costs()…</span>
+    <div class="source-line">
+      <span id="status" role="status" aria-live="polite">Connecting to FinOps Hub...</span>
+      <span>FinOps Hub cost exports</span>
+      <span id="refreshed">Not refreshed</span>
+    </div>
+    <p id="scope" class="scope">Scope: all billing accounts and profiles visible to the configured Hub connector.</p>
+    <p class="scope-note">Observed cost records are not purchased-plan inventory. No active status, hourly commitment, term, or expiry is inferred.</p>
+    <nav aria-label="Dashboard sections">
+      <a href="#modeler">Modeler</a><a href="#coverage">Coverage</a><a href="#recommendations">Recommendations</a><a href="#current-plans">Observed plans</a>
+    </nav>
+    <section id="error" class="error" role="alert" hidden>
+      <strong>Live utilization could not be loaded</strong>
+      <p id="error-detail"></p>
+      <p>No replacement values are shown. Select Refresh data to retry.</p>
+    </section>
+    <section class="metrics" aria-label="Observed savings plan summary">
+      <div class="metric">
+        <p class="metric-label">Observed savings plan IDs</p>
+        <p class="metric-value" id="plan-count">&mdash;</p>
+        <p class="metric-note">Distinct account, profile, and benefit IDs in the last 30 completed UTC days, not active inventory</p>
       </div>
-      <div class="metric-card">
-        <span class="metric-label">Hourly Commitment</span>
-        <span class="metric-value" id="kpi-hourly-commit">—</span>
-        <span class="metric-sub" id="kpi-annual-commit">—</span>
+      <div class="metric">
+        <p class="metric-label">Lowest observed 7-day utilization</p>
+        <p class="metric-value" id="lowest">&mdash;</p>
+        <p class="metric-note">Lowest per-plan, per-currency cost ratio, not a portfolio average</p>
       </div>
-      <div class="metric-card">
-        <span class="metric-label">30-Day Utilization</span>
-        <span class="metric-value" id="kpi-util-30d">—</span>
-        <span class="metric-sub" id="kpi-util-range">—</span>
-      </div>
-      <div class="metric-card">
-        <span class="metric-label">Observed Coverage</span>
-        <span class="metric-value" id="kpi-best-savings">—</span>
-        <span class="metric-sub" id="kpi-best-savings-sub">—</span>
+      <div class="metric">
+        <p class="metric-label">Current compute coverage</p>
+        <p class="metric-value muted-value">Unavailable</p>
+        <p class="metric-note">Eligible usage has not been verified against the customer price sheet</p>
       </div>
     </section>
-
-    <section class="section" aria-labelledby="inventory-heading">
-      <div class="section-header">
-        <div>
-          <h2 class="section-title" id="inventory-heading">01 · Observed Savings Plan Inventory &amp; Utilization</h2>
-          <p class="section-subtitle">Active Compute Savings Plans reconciled from FinOps Hub FOCUS commitment rows (Used + Unused amortized commitment over 7d and 30d).</p>
+    <section id="modeler" class="section" aria-labelledby="model-title">
+      <div class="section-title"><h2 id="model-title">Recommendation impact modeler</h2><span class="scope">Unavailable without Azure-evaluated scenarios</span></div>
+      <p class="section-copy">Only exact scenarios returned by Azure Benefit Recommendations may inform this model. Cost history alone cannot supply a purchase recommendation.</p>
+      <div class="notice" role="status">Azure Benefit Recommendations have not been returned through this report's configured Kusto tool. The modeler is disabled. No commitment, discount rate, savings, or scenario curve is synthesized.</div>
+      <div class="model">
+        <div class="controls">
+          <label>Plan type<select disabled><option>Unavailable</option></select></label>
+          <label>Term<select disabled><option>Unavailable</option></select></label>
+          <label>Additional hourly commitment
+            <output class="commitment">&mdash;</output>
+            <input type="range" min="0" max="0" value="0" disabled aria-label="Azure-evaluated hourly commitment option">
+            <span class="control-note">Azure-evaluated options only; no interpolation</span>
+          </label>
+          <button class="secondary" type="button" disabled>Use Azure recommendation</button>
+          <label class="check"><input type="checkbox" disabled>Show 730-hour monthly equivalents</label>
         </div>
-        <span class="mono" id="plans-period" style="font-size:12px;color:var(--ink-secondary)">—</span>
-      </div>
-      <div class="section-body">
-        <div class="data-table-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Plan &amp; Commitment ID</th>
-                <th>Term</th>
-                <th>Billing Scope</th>
-                <th class="num">Hourly / Monthly</th>
-                <th class="num">Utilization (7d / 30d)</th>
-                <th>Consumption Split</th>
-                <th class="num">Observed Window</th>
-              </tr>
-            </thead>
-            <tbody id="plans-body">
-              <tr><td colspan="7">Loading active savings plans from FinOps Hub…</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <section class="section" aria-labelledby="coverage-heading">
-      <div class="section-header">
-        <div>
-          <h2 class="section-title" id="coverage-heading">02 · 30-Day Compute Coverage &amp; Eligible PAYG Spend (FinOps Hub Kusto)</h2>
-          <p class="section-subtitle">Cross-walk of <span class="mono">Costs()</span> against <span class="mono">Prices()</span> (<span class="mono">x_SkuPriceType == 'SavingsPlan'</span>) isolating Savings Plan-covered compute vs uncovered PAYG compute eligible for Savings Plans.</p>
-        </div>
-        <span class="mono" id="coverage-window" style="font-size:12px;color:var(--ink-secondary)">—</span>
-      </div>
-      <div class="section-body">
-        <div class="projection-grid" id="coverage-summary" style="margin-top:0;margin-bottom:18px"></div>
-
-        <div class="simulator-grid" style="grid-template-columns: 420px minmax(0, 1fr)">
-          <div>
-            <h3 style="margin:0 0 8px;font-size:13px">Coverage by Compute Meter Family</h3>
-            <div class="data-table-wrap">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>Meter Family</th>
-                    <th class="num">SP Covered (30d)</th>
-                    <th class="num">Uncovered PAYG</th>
-                    <th class="num">Coverage</th>
-                  </tr>
-                </thead>
-                <tbody id="family-coverage-body">
-                  <tr><td colspan="4">Loading Kusto meter family breakdown…</td></tr>
-                </tbody>
-              </table>
-            </div>
+        <div class="outcomes">
+          <div class="outcome-strip">
+            <div><p class="metric-label">Estimated net savings</p><output class="outcome-value">&mdash;</output><span class="metric-note">No Azure scenario returned</span></div>
+            <div><p class="metric-label">Unused commitment</p><output class="outcome-value">&mdash;</output><span class="metric-note">No Azure scenario returned</span></div>
+            <div><p class="metric-label">Modeled utilization</p><output class="outcome-value">&mdash;</output><span class="metric-note">No Azure scenario returned</span></div>
           </div>
-
-          <div>
-            <h3 style="margin:0 0 8px;font-size:13px">Top Uncovered Savings Plan-Eligible PAYG SKUs (30-Day Actuals + <span class="mono">Prices()</span> Discounts)</h3>
-            <div class="data-table-wrap">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>SKU / Meter</th>
-                    <th>Subscription &amp; Region</th>
-                    <th class="num">30d PAYG Cost</th>
-                    <th class="num">Avg $/hr</th>
-                    <th class="num">Unit Price (PAYG → 1Y / 3Y SP)</th>
-                    <th class="num">Discount (1Y / 3Y)</th>
-                    <th class="num">Est. 3Y Annual Savings</th>
-                  </tr>
-                </thead>
-                <tbody id="uncovered-skus-body">
-                  <tr><td colspan="7">Loading uncovered PAYG compute SKUs…</td></tr>
-                </tbody>
-              </table>
-            </div>
+          <div class="comparison">
+            <div class="comparison-row"><div class="comparison-label"><span>Eligible cost without the new plan</span><strong>&mdash;</strong></div><div class="bar-track"></div></div>
+            <div class="comparison-row"><div class="comparison-label"><span>Eligible cost with the modeled plan</span><strong>&mdash;</strong></div><div class="bar-track"></div></div>
           </div>
+          <p class="model-note">No purchase guidance is provided. Retrieve current Azure Benefit Recommendations for the intended billing scope before evaluating a commitment.</p>
         </div>
       </div>
     </section>
-
-    <section class="section" aria-labelledby="simulator-heading">
-      <div class="section-header">
-        <div>
-          <h2 class="section-title" id="simulator-heading">03 · Savings Plan Purchase Simulator</h2>
-          <p class="section-subtitle">Model incremental hourly commitments ($/hr) against observed hourly uncovered eligible PAYG compute usage and FinOps Hub <span class="mono">Prices()</span> discount rates.</p>
-        </div>
-        <span class="mono" style="font-size:12px;color:var(--ink-secondary)">Policy: Non-cancelable · Hourly use-it-or-lose-it</span>
-      </div>
-      <div class="section-body">
-        <div class="simulator-grid">
-          <aside class="control-panel" aria-label="Simulation controls">
-            <div class="control-group">
-              <div class="control-label">
-                <span>Recommendation Scope</span>
-                <span class="mono" id="label-scope">Shared</span>
-              </div>
-              <div class="segmented" id="ctrl-scope">
-                <button type="button" data-scope="Shared" class="active">Shared Scope</button>
-                <button type="button" data-scope="Single">Single Sub</button>
-              </div>
-            </div>
-
-            <div class="control-group" id="sub-select-group" hidden>
-              <label class="control-label" for="ctrl-subscription">
-                <span>Target Subscription (Single Scope)</span>
-              </label>
-              <select class="control-select" id="ctrl-subscription"></select>
-            </div>
-
-            <div class="control-group">
-              <div class="control-label">
-                <span>Commitment Term</span>
-                <span class="mono" id="label-term">3-Year (P3Y)</span>
-              </div>
-              <div class="segmented" id="ctrl-term">
-                <button type="button" data-term="P3Y" class="active">3-Year (P3Y)</button>
-                <button type="button" data-term="P1Y">1-Year (P1Y)</button>
-              </div>
-            </div>
-
-            <div class="control-group">
-              <div class="control-label">
-                <span>Lookback Window</span>
-                <span class="mono" id="label-lookback">Last30Days</span>
-              </div>
-              <div class="segmented" id="ctrl-lookback">
-                <button type="button" data-lookback="Last7Days">7 Days</button>
-                <button type="button" data-lookback="Last30Days" class="active">30 Days</button>
-                <button type="button" data-lookback="Last60Days">60 Days</button>
-              </div>
-            </div>
-
-            <div class="control-group">
-              <div class="control-label">
-                <span>Minimum Utilization Guardrail</span>
-                <span class="mono" id="label-guardrail">90%</span>
-              </div>
-              <div class="segmented" id="ctrl-guardrail">
-                <button type="button" data-min-util="95">≥ 95%</button>
-                <button type="button" data-min-util="90" class="active">≥ 90%</button>
-                <button type="button" data-min-util="80">≥ 80%</button>
-                <button type="button" data-min-util="0">Max Savings</button>
-              </div>
-            </div>
-
-            <div class="control-group">
-              <label class="control-label" for="slider-pct">
-                <span>Commitment Coverage Slider</span>
-                <span class="mono" id="slider-pct-label">100% of recommended</span>
-              </label>
-              <input type="range" id="slider-pct" min="0" max="150" step="5" value="100">
-              <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink-muted)" class="mono">
-                <span>0% ($0/hr)</span>
-                <span>70% (Conservative)</span>
-                <span>100% (Rec)</span>
-                <span>150%</span>
-              </div>
-            </div>
-
-            <div class="callout" id="guardrail-note">
-              Savings plans cannot be canceled or exchanged after purchase. A 70%–90% staged commitment protects against workload rightsizing or seasonal dips.
-            </div>
-          </aside>
-
-          <div>
-            <h3 style="margin:0 0 10px;font-size:13px;color:var(--ink-secondary)">Recommendation Matrix (Select a card to anchor simulation)</h3>
-            <div class="rec-matrix" id="recommendations-grid"></div>
-
-            <div class="projection-box">
-              <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px">
-                <h3 style="margin:0;font-size:14px">Live Scenario Projection</h3>
-                <span class="mono" id="selected-summary" style="font-size:12px;color:var(--accent-azure)">—</span>
-              </div>
-              <div class="projection-grid" id="projection-metrics"></div>
-            </div>
-
-            <h3 style="margin:16px 0 8px;font-size:13px;color:var(--ink-secondary)">Commitment Curve Checkpoints</h3>
-            <div class="data-table-wrap">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th class="num">Hourly Commit</th>
-                    <th class="num">Annual Commit</th>
-                    <th class="num">Coverage</th>
-                    <th class="num">Utilization</th>
-                    <th class="num">Lookback Savings</th>
-                    <th class="num">Est. Annual Savings</th>
-                    <th class="num">Annual Waste</th>
-                    <th>Posture</th>
-                  </tr>
-                </thead>
-                <tbody id="curve-body">
-                  <tr><td colspan="8">Loading commitment simulation curve…</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
+    <section id="coverage" class="section" aria-labelledby="coverage-title">
+      <h2 id="coverage-title">Coverage</h2>
+      <p class="section-copy">Coverage and utilization are different measures. Utilization below reports used versus unused commitment cost, not the share of eligible usage covered by a savings plan.</p>
+      <div class="coverage-grid">
+        <div><h3>Current compute coverage</h3><span class="coverage-value muted-value">Unavailable</span><p>No verified price-sheet eligibility and billing-scope reconciliation has been returned. No coverage percentage is inferred from service categories.</p></div>
+        <div><h3>After a modeled commitment</h3><output class="coverage-value muted-value">Unavailable</output><p>No Azure Benefit Recommendations scenario has been returned. No modeled coverage is substituted.</p></div>
       </div>
     </section>
-  </div>
-
+    <section id="recommendations" class="section" aria-labelledby="recommendations-title">
+      <div class="section-title"><h2 id="recommendations-title">Savings plan recommendations</h2><span class="scope">Azure source required</span></div>
+      <p class="section-copy">Recommendations must come from Microsoft.CostManagement/benefitRecommendations. This report does not generate recommendations from PAYG cost rows.</p>
+      <div class="table-wrap">
+        <table><caption>Azure savings-plan recommendations</caption><thead><tr><th scope="col">Plan type</th><th scope="col">Term</th><th scope="col">Hourly commitment</th><th scope="col">Estimated savings</th><th scope="col">Coverage after</th><th scope="col">Explore</th></tr></thead><tbody><tr><td colspan="6" class="message">Unavailable: no live Azure Benefit Recommendations response has been returned to this report. This is not evidence that Azure has no recommendations.</td></tr></tbody></table>
+      </div>
+    </section>
+    <section id="current-plans" class="section" aria-labelledby="plans-title">
+      <div class="section-title"><h2 id="plans-title">Observed commitment utilization</h2><p id="period">Loading reporting period...</p></div>
+      <div class="table-wrap">
+        <table aria-describedby="data-note">
+          <caption>Observed savings-plan cost utilization over 7 and 30 completed UTC days</caption>
+          <thead><tr><th scope="col">Savings plan / billing scope</th><th scope="col">7-day utilization</th><th scope="col">30-day utilization</th><th scope="col">Latest observed usage (UTC)</th><th scope="col">Inventory metadata</th></tr></thead>
+          <tbody id="plans"><tr><td colspan="5" class="message">Loading live cost records...</td></tr></tbody>
+        </table>
+      </div>
+      <p id="data-note">Observed utilization = Used EffectiveCost / (Used + Unused EffectiveCost), excluding purchases. Windows end at today's UTC midnight and include only reported cost rows, which can be delayed or revised. Missing rows are not filled with zero. A zero denominator or invalid cost makes the percentage unavailable. Currencies, accounts, and billing profiles remain separate.</p>
+    </section>
+    <details>
+      <summary>Source and calculation</summary>
+      <p id="source-target">Kusto target: not configured.</p>
+      <p>Live path: this single-file report calls the hosted window.sreagent.callTool Kusto tool. There are no external modules, browser credentials, localhost API dependencies, or saved-result fallbacks.</p>
+      <p>Observed source: <code>Costs()</code>, <code>CommitmentDiscountType == 'Savings Plan'</code>, <code>ChargeCategory == 'Usage'</code>, and reported <code>Used</code> or <code>Unused</code> commitment-discount status. These are cost-allocation statuses, not plan lifecycle statuses.</p>
+      <p>Only observed 7-day and 30-day utilization is calculated. Cost rows do not establish current purchased-plan inventory, active status, contractual hourly commitment, term, or expiry. Those fields require authoritative Azure Billing data and remain unavailable here.</p>
+      <p>Azure Benefit Recommendations and customer price-sheet eligibility are not loaded by this Kusto-only report. Purchase modeling and coverage remain explicitly unavailable, rather than substituting discounts or synthetic scenarios. No purchases or Azure configuration changes are performed.</p>
+    </details>
+  </main>
   <script nonce="{REPORT_NONCE}">
     const TOOL_NAME = 'system-mcp-kusto_kusto_query';
-    // REQUIRED: Replace this placeholder with the destination FinOps Hub ADX cluster URI before upload.
     const CLUSTER_URI = 'REPLACE_WITH_FINOPS_HUB_CLUSTER_URI';
     const DATABASE = 'Hub';
+    const byId = (id) => document.getElementById(id);
+    const percentFormat = new Intl.NumberFormat("en-US", { style: "percent", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const dateFormat = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 
-    const HOURS_PER_YEAR = 8760;
-    const HOURS_PER_MONTH = 730;
-
-    const SKU_LABELS = {
-      Compute_Savings_Plan: 'Compute Savings Plan'
-    };
-
-    const TERM_LABELS = {
-      P1Y: '1-Year',
-      P3Y: '3-Year',
-      P5Y: '5-Year'
-    };
-
-    function skuLabel(skuName) {
-      if (!skuName) return 'Unknown SKU';
-      return SKU_LABELS[skuName] || String(skuName).replace(/_/g, ' ');
+    function element(tag, text, className) {
+      const node = document.createElement(tag);
+      if (text !== undefined) node.textContent = text;
+      if (className) node.className = className;
+      return node;
     }
-
-    function termLabel(term) {
-      if (!term) return 'Unknown Term';
-      return TERM_LABELS[term] || String(term);
+    function tableMessage(text) {
+      const cell = element("td", text, "message");
+      cell.colSpan = 5;
+      const row = document.createElement("tr");
+      row.append(cell);
+      byId("plans").replaceChildren(row);
     }
-
-    function round(value, digits = 2) {
-      const num = Number(value);
-      if (!Number.isFinite(num)) return 0;
-      const factor = 10 ** digits;
-      return Math.round(num * factor) / factor;
-    }
-
     function parseToolResult(raw) {
       let payload = raw;
-      for (let i = 0; i < 2 && typeof payload === 'string'; i += 1) {
-        payload = JSON.parse(payload);
+      for (let i = 0; i < 2 && typeof payload === "string"; i += 1) payload = JSON.parse(payload);
+      if (payload?.isError || payload?.error || payload?.Exceptions?.length) {
+        throw new Error("The Kusto tool reported a failed or incomplete query.");
       }
-      if (payload && typeof payload === 'object' && typeof payload.error === 'string' && payload.error) {
-        throw new Error(payload.error);
-      }
-      const items = payload && payload.results && payload.results.items
-        ? payload.results.items
-        : (payload && payload.items ? payload.items : []);
-      if (!Array.isArray(items) || items.length === 0) return [];
+      const items = payload?.results?.items ?? payload?.items;
+      if (!Array.isArray(items)) throw new Error("The Kusto tool did not return the expected result table.");
+      if (!items.length) return [];
       const header = items[0];
-      if (header && !Array.isArray(header) && typeof header === 'object') {
-        const keys = Object.keys(header);
-        return items.slice(1).filter(Array.isArray).map((row) =>
-          Object.fromEntries(keys.map((key, index) => [key, row[index]]))
-        );
+      if (!header || typeof header !== "object" || Array.isArray(header)) throw new Error("The Kusto result has no valid column header.");
+      const keys = Object.keys(header);
+      // The hosted tool and local bridge use a null-valued header followed by positional rows.
+      if (items.length > 1 && Array.isArray(items[1])) {
+        return items.slice(1).map((row) => {
+          if (!Array.isArray(row) || row.length !== keys.length) throw new Error("The Kusto result contains an incomplete row.");
+          return Object.fromEntries(keys.map((key, index) => [key, row[index]]));
+        });
       }
-      if (Array.isArray(items) && items.every((row) => row && typeof row === 'object' && !Array.isArray(row))) {
-        return items;
+      const columnTypes = new Set(["string", "real", "long", "int", "datetime", "timespan", "bool", "dynamic", "decimal", "guid"]);
+      if (items.length === 1 && Object.values(header).every((value) => value === null || columnTypes.has(value))) return [];
+      if (!items.every((row) => row && typeof row === "object" && !Array.isArray(row))) {
+        throw new Error("The Kusto result contains an invalid row.");
       }
-      return [];
+      return items;
     }
-
-    async function runKusto(query) {
-      if (!window.sreagent || typeof window.sreagent.callTool !== 'function') {
-        throw new Error('window.sreagent.callTool is unavailable in this host environment.');
+    function utilization(row, days) {
+      const count = row[`Records${days}`];
+      const invalid = row[`Invalid${days}`];
+      const used = row[`Used${days}`];
+      const unused = row[`Unused${days}`];
+      if (!Number.isInteger(count) || count <= 0 || invalid !== 0 ||
+          !Number.isFinite(used) || !Number.isFinite(unused) || used < 0 || unused < 0 ||
+          !Number.isFinite(used + unused) || used + unused <= 0) return null;
+      return used / (used + unused);
+    }
+    function utilizationCell(row, days) {
+      const cell = document.createElement("td");
+      const value = utilization(row, days);
+      if (value === null) {
+        cell.append(element("span", "Unavailable"), element("span", "No usable denominator or invalid/missing cost records", "cell-note"));
+        return cell;
       }
-      const raw = await window.sreagent.callTool(TOOL_NAME, {
-        'cluster-uri': CLUSTER_URI,
-        database: DATABASE,
-        query
+      const bar = document.createElement("progress");
+      bar.max = 100;
+      bar.value = value * 100;
+      bar.setAttribute("aria-label", `${days}-day observed utilization: ${percentFormat.format(value)}`);
+      cell.append(element("span", percentFormat.format(value), "average"), bar);
+      cell.append(element("span", `${row[`Days${days}`]} reported days; ${row.Currency}`, "cell-note"));
+      return cell;
+    }
+    function render(rows) {
+      const identities = new Set();
+      const groups = new Set();
+      const values = [];
+      const nodes = rows.map((row) => {
+        if (typeof row.BenefitId !== "string" || !row.BenefitId ||
+            typeof row.Account !== "string" || typeof row.Profile !== "string" ||
+            typeof row.Currency !== "string" || !/^[A-Z]{3}$/.test(row.Currency) ||
+            !Number.isFinite(Date.parse(row.LatestUsage))) {
+          throw new Error("The Hub returned missing benefit identity, currency, billing scope, or usage date.");
+        }
+        const identity = JSON.stringify([row.Account.toLowerCase(), row.Profile.toLowerCase(), row.BenefitId.toLowerCase()]);
+        const group = JSON.stringify([identity, row.Currency]);
+        if (groups.has(group)) throw new Error("The Hub returned duplicate plan/currency groups.");
+        groups.add(group);
+        identities.add(identity);
+        const value = utilization(row, 7);
+        if (value !== null) values.push(value);
+        const identityCell = document.createElement("td");
+        identityCell.append(element("span", row.PlanName || "Observed savings plan", "plan-name"),
+          element("code", row.BenefitId, "plan-id"),
+          element("span", `Account: ${row.Account || "Not reported"}; profile: ${row.Profile || "Not reported"}`, "cell-note"));
+        const latest = element("td", dateFormat.format(new Date(row.LatestUsage)), "number");
+        const metadata = element("td", "Unavailable");
+        metadata.append(element("span", "Active status, hourly commitment, term, and expiry require Azure Billing", "cell-note"));
+        const node = document.createElement("tr");
+        node.append(identityCell, utilizationCell(row, 7), utilizationCell(row, 30), latest, metadata);
+        return node;
       });
-      return parseToolResult(raw);
+      if (nodes.length) byId("plans").replaceChildren(...nodes);
+      else tableMessage("No savings-plan Used/Unused cost rows were returned for the last 30 completed UTC days. Purchased inventory is not determined.");
+      byId("plan-count").textContent = String(identities.size);
+      byId("lowest").textContent = values.length ? percentFormat.format(Math.min(...values)) : "Unavailable";
     }
-
-    function startOfUtcDay(dateInput) {
-      const d = new Date(dateInput);
-      return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-    }
-
-    function addUtcDays(dateInput, days) {
-      const d = new Date(dateInput);
-      return new Date(d.getTime() + days * 86400000);
-    }
-
-    function buildScopeAndPeriodQuery() {
-      return `
-let costSpan = Costs()
-| where isnotempty(BillingCurrency)
-| summarize
-    EffectiveSpend = sum(EffectiveCost),
-    MinStart = min(ChargePeriodStart),
-    MaxStart = max(ChargePeriodStart),
-    MaxEnd = max(ChargePeriodEnd),
-    BillingAccountId = take_anyif(BillingAccountId, isnotempty(BillingAccountId)),
-    BillingAccountName = take_anyif(BillingAccountName, isnotempty(BillingAccountName)),
-    BillingProfileId = take_anyif(x_BillingProfileId, isnotempty(x_BillingProfileId)),
-    BillingProfileName = take_anyif(x_BillingProfileName, isnotempty(x_BillingProfileName))
-  by BillingCurrency
-| top 1 by EffectiveSpend desc;
-let priceStats = Prices()
-| summarize
-    TotalPriceRows = count(),
-    SavingsPlanPriceRows = countif(x_SkuPriceType == 'SavingsPlan'),
-    LatestPriceStart = max(x_EffectivePeriodStart);
-costSpan
-| extend Dummy = 1
-| join kind=inner (priceStats | extend Dummy = 1) on Dummy
-| project-away Dummy, Dummy1`;
-    }
-
-    function buildInventoryQuery(profileId, currency, start30d, start7d, endDate) {
-      const safeProfile = String(profileId || '').replace(/'/g, '');
-      const safeCurrency = String(currency || '').replace(/'/g, '');
-      const profileFilter = safeProfile ? `| where x_BillingProfileId has '${safeProfile}'` : '';
-      const currencyFilter = safeCurrency ? `| where BillingCurrency == '${safeCurrency}'` : '';
-      return `
-let w30Start = datetime(${start30d});
-let w7Start = datetime(${start7d});
-let wEnd = datetime(${endDate});
-let spRows = materialize(
-  Costs()
-  | where ChargePeriodStart >= datetime_add('day', -90, wEnd) and ChargePeriodStart < wEnd
-  ${profileFilter}
-  ${currencyFilter}
-  | where CommitmentDiscountType =~ 'Savings Plan' and isnotempty(CommitmentDiscountId)
-  | where ChargeCategory != 'Purchase'
-);
-let planMetrics = spRows
-| summarize
-    CommitmentDiscountName = take_anyif(CommitmentDiscountName, isnotempty(CommitmentDiscountName)),
-    OrderId = take_anyif(x_SkuOrderId, isnotempty(x_SkuOrderId)),
-    OrderName = take_anyif(x_SkuOrderName, isnotempty(x_SkuOrderName)),
-    SkuTermMonths = take_anyif(toint(x_SkuTerm), toint(x_SkuTerm) > 0),
-    BillingProfileId = take_anyif(x_BillingProfileId, isnotempty(x_BillingProfileId)),
-    BillingProfileName = take_anyif(x_BillingProfileName, isnotempty(x_BillingProfileName)),
-    BillingCurrency = take_anyif(BillingCurrency, isnotempty(BillingCurrency)),
-    FirstSeen = min(ChargePeriodStart),
-    LastSeen = max(ChargePeriodEnd),
-    Used30d = sumif(EffectiveCost, ChargePeriodStart >= w30Start and CommitmentDiscountStatus == 'Used'),
-    Unused30d = sumif(EffectiveCost, ChargePeriodStart >= w30Start and CommitmentDiscountStatus == 'Unused'),
-    Min30dStart = minif(ChargePeriodStart, ChargePeriodStart >= w30Start),
-    Max30dEnd = maxif(ChargePeriodEnd, ChargePeriodStart >= w30Start),
-    Used7d = sumif(EffectiveCost, ChargePeriodStart >= w7Start and CommitmentDiscountStatus == 'Used'),
-    Unused7d = sumif(EffectiveCost, ChargePeriodStart >= w7Start and CommitmentDiscountStatus == 'Unused')
-  by CommitmentDiscountId;
-let subSplit = spRows
-| where ChargePeriodStart >= w30Start and CommitmentDiscountStatus == 'Used'
-| summarize SubUsed30d = sum(EffectiveCost), SubAccountName = take_any(SubAccountName) by CommitmentDiscountId, SubAccountId
-| order by CommitmentDiscountId asc, SubUsed30d desc
-| summarize
-    PrimarySubId = take_any(SubAccountId),
-    PrimarySubName = take_any(SubAccountName),
-    PrimarySubUsed30d = max(SubUsed30d),
-    DistinctSubs = dcount(SubAccountId)
-  by CommitmentDiscountId;
-planMetrics
-| join kind=leftouter subSplit on CommitmentDiscountId
-| project
-    CommitmentDiscountId,
-    CommitmentDiscountName,
-    OrderId,
-    OrderName,
-    SkuTermMonths = coalesce(SkuTermMonths, 36),
-    BillingProfileId,
-    BillingProfileName,
-    BillingCurrency,
-    FirstSeen,
-    LastSeen,
-    Used30d = todouble(Used30d),
-    Unused30d = todouble(Unused30d),
-    Total30d = todouble(Used30d + Unused30d),
-    Hours30d = todouble((Max30dEnd - Min30dStart) / 1h),
-    Used7d = todouble(Used7d),
-    Unused7d = todouble(Unused7d),
-    Total7d = todouble(Used7d + Unused7d),
-    PrimarySubId,
-    PrimarySubName,
-    PrimarySubUsed30d = todouble(coalesce(PrimarySubUsed30d, 0.0)),
-    DistinctSubs = toint(coalesce(DistinctSubs, 0))
-| where Total30d > 0 or Total7d > 0
-| order by Total30d desc`;
-    }
-
-    function coverageQuery(profileId, currency, period) {
-      const safeProfile = String(profileId || '').replace(/'/g, '');
-      const safeCurrency = String(currency || '').replace(/'/g, '');
-      const profileFilter = safeProfile ? `| where x_BillingProfileId has '${safeProfile}'` : '';
-      const currencyFilter = safeCurrency ? `| where BillingCurrency == '${safeCurrency}'` : '';
-      return `
-let startDate = datetime(${period.startDate});
-let endDate = datetime(${period.endDate});
-let scopedCosts = materialize(
-  Costs()
-  | where ChargePeriodStart >= startDate and ChargePeriodStart < endDate
-  ${profileFilter}
-  ${currencyFilter}
-);
-let spUsedRows = materialize(
-  scopedCosts
-  | where PricingCategory == 'Committed'
-      and CommitmentDiscountType == 'Savings Plan'
-      and CommitmentDiscountStatus == 'Used'
-);
-let spUnusedRows = materialize(
-  scopedCosts
-  | where PricingCategory == 'Committed'
-      and CommitmentDiscountType == 'Savings Plan'
-      and CommitmentDiscountStatus == 'Unused'
-);
-let spEligibleMeters = materialize(
-  Prices()
-  | where x_SkuPriceType == 'SavingsPlan' and isnotempty(x_SkuMeterId)
-  | summarize
-      Sp1yUnitPrice = avgif(x_EffectiveUnitPrice, x_SkuTerm == 12),
-      Sp3yUnitPrice = avgif(x_EffectiveUnitPrice, x_SkuTerm == 36),
-      Sp1yBaseUnitPrice = avgif(ListUnitPrice, x_SkuTerm == 12),
-      Sp3yBaseUnitPrice = avgif(ListUnitPrice, x_SkuTerm == 36),
-      SampleTerm = take_any(x_SkuTerm)
-    by x_SkuMeterId
-);
-let paygRows = materialize(
-  scopedCosts
-  | where PricingCategory == 'Standard' and ChargeCategory == 'Usage'
-  | extend MeterId = tostring(x_SkuMeterId)
-  | lookup kind=inner (spEligibleMeters | project MeterId = x_SkuMeterId, Sp1yUnitPrice, Sp3yUnitPrice) on MeterId
-);
-let summaryRow =
-  union
-    (spUsedRows | summarize SpUsedEffective = sum(EffectiveCost), SpUsedContracted = sum(ContractedCost), SpUsedList = sum(ListCost)),
-    (spUnusedRows | summarize SpUnusedEffective = sum(EffectiveCost)),
-    (paygRows | summarize PaygEligibleEffective = sum(EffectiveCost), PaygEligibleContracted = sum(ContractedCost), PaygEligibleList = sum(ListCost)),
-    (spEligibleMeters | summarize SpEligibleMeterCount = count())
-  | summarize
-      SpUsedEffective = sum(SpUsedEffective),
-      SpUsedContracted = sum(SpUsedContracted),
-      SpUsedList = sum(SpUsedList),
-      SpUnusedEffective = sum(SpUnusedEffective),
-      PaygEligibleEffective = sum(PaygEligibleEffective),
-      PaygEligibleContracted = sum(PaygEligibleContracted),
-      PaygEligibleList = sum(PaygEligibleList),
-      SpEligibleMeterCount = sum(SpEligibleMeterCount)
-  | project
-      Kind = 'Summary',
-      Key = 'All',
-      Name = 'All',
-      SubAccount = '',
-      Region = '',
-      Unit = '',
-      SpUsedEffective = todouble(SpUsedEffective),
-      SpUsedContracted = todouble(SpUsedContracted),
-      SpUnusedEffective = todouble(SpUnusedEffective),
-      PaygEligibleEffective = todouble(PaygEligibleEffective),
-      PaygEligibleContracted = todouble(PaygEligibleContracted),
-      ConsumedQuantity = todouble(0),
-      ActiveDays = toint(0),
-      ListUnitPrice = todouble(0),
-      ContractedUnitPrice = todouble(0),
-      Sp1yUnitPrice = todouble(0),
-      Sp3yUnitPrice = todouble(0),
-      Extra = tostring(SpEligibleMeterCount);
-let byFamilyRows =
-  union
-    (spUsedRows | project Family = coalesce(tostring(x_SkuServiceFamily), ServiceName), EffectiveCost, ContractedCost, Bucket = 'SPUsed', Day = startofday(ChargePeriodStart), x_SkuMeterSubcategory, x_SkuDescription),
-    (paygRows | project Family = coalesce(tostring(x_SkuServiceFamily), ServiceName), EffectiveCost, ContractedCost, Bucket = 'PAYGEligible', Day = startofday(ChargePeriodStart), x_SkuMeterSubcategory, x_SkuDescription)
-  | summarize
-      SpUsedEffective = sumif(EffectiveCost, Bucket == 'SPUsed'),
-      SpUsedContracted = sumif(ContractedCost, Bucket == 'SPUsed'),
-      PaygEligibleEffective = sumif(EffectiveCost, Bucket == 'PAYGEligible'),
-      PaygEligibleContracted = sumif(ContractedCost, Bucket == 'PAYGEligible'),
-      ActiveDays = dcount(Day),
-      SampleMeters = tostring(make_set(x_SkuMeterSubcategory, 4)),
-      SampleDescriptions = tostring(make_set(x_SkuDescription, 4))
-    by Family
-  | project
-      Kind = 'Family',
-      Key = Family,
-      Name = SampleMeters,
-      SubAccount = '',
-      Region = '',
-      Unit = '',
-      SpUsedEffective = todouble(SpUsedEffective),
-      SpUsedContracted = todouble(SpUsedContracted),
-      SpUnusedEffective = todouble(0),
-      PaygEligibleEffective = todouble(PaygEligibleEffective),
-      PaygEligibleContracted = todouble(PaygEligibleContracted),
-      ConsumedQuantity = todouble(0),
-      ActiveDays = toint(ActiveDays),
-      ListUnitPrice = todouble(0),
-      ContractedUnitPrice = todouble(0),
-      Sp1yUnitPrice = todouble(0),
-      Sp3yUnitPrice = todouble(0),
-      Extra = SampleDescriptions;
-let bySubRows =
-  union
-    (spUsedRows | project SubAccountId, SubAccountName, EffectiveCost, ContractedCost, Bucket = 'SPUsed'),
-    (paygRows | project SubAccountId, SubAccountName, EffectiveCost, ContractedCost, Bucket = 'PAYGEligible')
-  | summarize
-      SpUsedEffective = sumif(EffectiveCost, Bucket == 'SPUsed'),
-      SpUsedContracted = sumif(ContractedCost, Bucket == 'SPUsed'),
-      PaygEligibleEffective = sumif(EffectiveCost, Bucket == 'PAYGEligible'),
-      PaygEligibleContracted = sumif(ContractedCost, Bucket == 'PAYGEligible')
-    by SubAccountId, SubAccountName
-  | project
-      Kind = 'SubAccount',
-      Key = SubAccountId,
-      Name = SubAccountName,
-      SubAccount = SubAccountName,
-      Region = '',
-      Unit = '',
-      SpUsedEffective = todouble(SpUsedEffective),
-      SpUsedContracted = todouble(SpUsedContracted),
-      SpUnusedEffective = todouble(0),
-      PaygEligibleEffective = todouble(PaygEligibleEffective),
-      PaygEligibleContracted = todouble(PaygEligibleContracted),
-      ConsumedQuantity = todouble(0),
-      ActiveDays = toint(0),
-      ListUnitPrice = todouble(0),
-      ContractedUnitPrice = todouble(0),
-      Sp1yUnitPrice = todouble(0),
-      Sp3yUnitPrice = todouble(0),
-      Extra = '';
-let topUncoveredSkus =
-  paygRows
-  | summarize
-      UncoveredEffective = sum(EffectiveCost),
-      UncoveredContracted = sum(ContractedCost),
-      ConsumedQuantity = sum(ConsumedQuantity),
-      ActiveDays = dcount(startofday(ChargePeriodStart)),
-      ListUnitPrice = avg(ListUnitPrice),
-      ContractedUnitPrice = avg(ContractedUnitPrice),
-      Sp1yUnitPrice = avg(Sp1yUnitPrice),
-      Sp3yUnitPrice = avg(Sp3yUnitPrice),
-      PricingUnit = take_any(PricingUnit),
-      RegionName = take_any(RegionName)
-    by MeterId, x_SkuDescription, ServiceName, x_SkuMeterSubcategory, SubAccountName
-  | top 12 by UncoveredEffective desc
-  | project
-      Kind = 'Sku',
-      Key = MeterId,
-      Name = coalesce(x_SkuDescription, x_SkuMeterSubcategory, ServiceName),
-      SubAccount = SubAccountName,
-      Region = RegionName,
-      Unit = PricingUnit,
-      SpUsedEffective = todouble(0),
-      SpUsedContracted = todouble(0),
-      SpUnusedEffective = todouble(0),
-      PaygEligibleEffective = todouble(UncoveredEffective),
-      PaygEligibleContracted = todouble(UncoveredContracted),
-      ConsumedQuantity = todouble(ConsumedQuantity),
-      ActiveDays = toint(ActiveDays),
-      ListUnitPrice = todouble(ListUnitPrice),
-      ContractedUnitPrice = todouble(ContractedUnitPrice),
-      Sp1yUnitPrice = todouble(Sp1yUnitPrice),
-      Sp3yUnitPrice = todouble(Sp3yUnitPrice),
-      Extra = strcat(ServiceName, ' · ', x_SkuMeterSubcategory);
-union summaryRow, byFamilyRows, bySubRows, topUncoveredSkus`;
-    }
-
-    function safeJsonArray(value) {
-      if (!value) return [];
+    async function refresh() {
+      const button = byId("refresh");
+      button.disabled = true;
+      button.textContent = "Refreshing...";
+      byId("error").hidden = true;
+      byId("plan-count").textContent = "\u2014";
+      byId("lowest").textContent = "\u2014";
+      byId("refreshed").textContent = "Not refreshed";
+      byId("status").textContent = "Loading observed utilization...";
+      byId("status").dataset.state = "loading";
+      byId("period").textContent = "Loading reporting period...";
+      byId("plans").setAttribute("aria-busy", "true");
+      tableMessage("Loading live cost records...");
       try {
-        const parsed = JSON.parse(value);
-        return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
-      } catch (_) {
-        return [];
-      }
-    }
-
-    function normalizeCoverage(rows, period, inventory = null) {
-      const summaryRow = rows.find((r) => r.Kind === 'Summary') || {};
-      const familyRows = rows.filter((r) => r.Kind === 'Family');
-      const subRows = rows.filter((r) => r.Kind === 'SubAccount');
-      const skuRows = rows.filter((r) => r.Kind === 'Sku');
-
-      const spUsedEffective = Number(summaryRow.SpUsedEffective || 0);
-      const spUsedContracted = Number(summaryRow.SpUsedContracted || 0);
-      const spUnusedEffective = Number(summaryRow.SpUnusedEffective || 0);
-      const paygEligibleEffective = Number(summaryRow.PaygEligibleEffective || 0);
-      const paygEligibleContracted = Number(summaryRow.PaygEligibleContracted || 0);
-      const spEligibleMeterCount = Number(summaryRow.Extra || 0);
-
-      const spCommittedFromKusto = spUsedEffective + spUnusedEffective;
-      const inventoryPeriodCommitment = Number(inventory?.hourlyCommitment || 0) * Number(period?.hours || 0);
-      const spCommittedTotal = spUnusedEffective > 0
-        ? spCommittedFromKusto
-        : Math.max(spCommittedFromKusto, inventoryPeriodCommitment);
-      const effectiveUnused = Math.max(spUnusedEffective, spCommittedTotal - spUsedEffective);
-      const spRealizedSavings = Math.max(0, spUsedContracted - spUsedEffective);
-
-      const totalEligibleEffective = spUsedEffective + paygEligibleEffective;
-      const totalEligibleContracted = spUsedContracted + paygEligibleContracted;
-
-      const coveragePct = totalEligibleEffective > 0
-        ? (spUsedEffective / totalEligibleEffective) * 100
-        : 0;
-      const contractedCoveragePct = totalEligibleContracted > 0
-        ? (spUsedContracted / totalEligibleContracted) * 100
-        : 0;
-      const utilizationFromCostPct = spCommittedTotal > 0
-        ? (spUsedEffective / spCommittedTotal) * 100
-        : (inventory?.weightedUtilization30d ?? 0);
-      const wastePct = spCommittedTotal > 0
-        ? (effectiveUnused / spCommittedTotal) * 100
-        : Math.max(0, 100 - utilizationFromCostPct);
-      const effectiveDiscountPct = spUsedContracted > 0
-        ? (spRealizedSavings / spUsedContracted) * 100
-        : 0;
-
-      const byFamily = familyRows
-        .map((row) => {
-          const used = Number(row.SpUsedEffective || 0);
-          const usedContracted = Number(row.SpUsedContracted || 0);
-          const uncovered = Number(row.PaygEligibleEffective || 0);
-          const total = used + uncovered;
-          return {
-            family: row.Key || 'Other Compute',
-            spCoveredEffective: round(used),
-            spCoveredContracted: round(usedContracted),
-            spRealizedSavings: round(Math.max(0, usedContracted - used)),
-            uncoveredPaygEffective: round(uncovered),
-            totalEligibleEffective: round(total),
-            coveragePct: round(total > 0 ? (used / total) * 100 : 0, 1),
-            activeDayCount: Number(row.ActiveDays || 0),
-            sampleMeters: safeJsonArray(row.Name),
-            sampleDescriptions: safeJsonArray(row.Extra)
-          };
-        })
-        .sort((a, b) => b.totalEligibleEffective - a.totalEligibleEffective);
-
-      const bySubAccount = subRows
-        .map((row) => {
-          const used = Number(row.SpUsedEffective || 0);
-          const usedContracted = Number(row.SpUsedContracted || 0);
-          const uncovered = Number(row.PaygEligibleEffective || 0);
-          const total = used + uncovered;
-          return {
-            subAccountId: row.Key,
-            subAccountName: row.Name || row.Key,
-            spCoveredEffective: round(used),
-            spRealizedSavings: round(Math.max(0, usedContracted - used)),
-            uncoveredPaygEffective: round(uncovered),
-            totalEligibleEffective: round(total),
-            coveragePct: round(total > 0 ? (used / total) * 100 : 0, 1)
-          };
-        })
-        .sort((a, b) => b.totalEligibleEffective - a.totalEligibleEffective);
-
-      const topUncoveredSkus = skuRows.map((row) => {
-        const uncoveredEffective = Number(row.PaygEligibleEffective || 0);
-        const contractedUnit = Number(row.ContractedUnitPrice || 0);
-        const sp1yUnit = Number(row.Sp1yUnitPrice || 0);
-        const sp3yUnit = Number(row.Sp3yUnitPrice || 0);
-        const activeDays = Number(row.ActiveDays || 0);
-        const activeHours = Math.max(24, activeDays * 24);
-        const discount1yPct = contractedUnit > 0 && sp1yUnit > 0
-          ? Math.max(0, ((contractedUnit - sp1yUnit) / contractedUnit) * 100)
-          : 0;
-        const discount3yPct = contractedUnit > 0 && sp3yUnit > 0
-          ? Math.max(0, ((contractedUnit - sp3yUnit) / contractedUnit) * 100)
-          : 0;
-        const avgHourlyPayg = uncoveredEffective / (period.hours || 720);
-        const est3yAnnualSavings = uncoveredEffective * (365 / 30) * (discount3yPct / 100);
-
-        return {
-          meterId: row.Key,
-          description: row.Name,
-          serviceName: row.Extra,
-          family: row.Extra,
-          subAccountName: row.SubAccount,
-          region: row.Region,
-          pricingUnit: row.Unit,
-          listUnitPrice: round(row.ListUnitPrice, 4),
-          contractedUnitPrice: round(contractedUnit, 4),
-          sp1yUnitPrice: round(sp1yUnit, 4),
-          sp3yUnitPrice: round(sp3yUnit, 4),
-          sp1yDiscountPct: round(discount1yPct, 1),
-          sp3yDiscountPct: round(discount3yPct, 1),
-          uncoveredEffectiveCost: round(uncoveredEffective),
-          uncoveredContractedCost: round(row.PaygEligibleContracted),
-          consumedQuantity: round(row.ConsumedQuantity, 2),
-          activeDays,
-          activeHours,
-          avgHourlyPaygCost: round(avgHourlyPayg, 3),
-          minHourlyPaygCost: round(uncoveredEffective / activeHours, 3),
-          est3yAnnualSavingsIfCovered: round(est3yAnnualSavings)
-        };
-      });
-
-      return {
-        period,
-        summary: {
-          savingsPlanUsedEffective: round(spUsedEffective),
-          savingsPlanUsedContracted: round(spUsedContracted),
-          savingsPlanRealizedSavings: round(spRealizedSavings),
-          savingsPlanUnusedEffective: round(effectiveUnused),
-          savingsPlanCommittedEffective: round(spCommittedTotal),
-          uncoveredPaygEffective: round(paygEligibleEffective),
-          uncoveredPaygContracted: round(paygEligibleContracted),
-          totalEligibleComputeEffective: round(totalEligibleEffective),
-          totalEligibleComputeContracted: round(totalEligibleContracted),
-          coveragePct: round(coveragePct, 1),
-          contractedCoveragePct: round(contractedCoveragePct, 1),
-          utilizationFromCostPct: round(utilizationFromCostPct, 1),
-          wastePct: round(wastePct, 1),
-          effectiveDiscountPct: round(effectiveDiscountPct, 1),
-          spEligibleMeterCount
-        },
-        byFamily,
-        bySubAccount,
-        topUncoveredSkus
-      };
-    }
-
-    function buildHourlySimulationQuery(profileId, currency, start60d, endDate) {
-      const safeProfile = String(profileId || '').replace(/'/g, '');
-      const safeCurrency = String(currency || '').replace(/'/g, '');
-      const profileFilter = safeProfile ? `| where x_BillingProfileId has '${safeProfile}'` : '';
-      const currencyFilter = safeCurrency ? `| where BillingCurrency == '${safeCurrency}'` : '';
-      return `
-let startDate = datetime(${start60d});
-let endDate = datetime(${endDate});
-let spEligibleMeters = materialize(
-  Prices()
-  | where x_SkuPriceType == 'SavingsPlan' and isnotempty(x_SkuMeterId)
-  | summarize
-      Sp1yUnitPrice = avgif(x_EffectiveUnitPrice, x_SkuTerm == 12),
-      Sp3yUnitPrice = avgif(x_EffectiveUnitPrice, x_SkuTerm == 36)
-    by x_SkuMeterId
-);
+        const cluster = new URL(CLUSTER_URI);
+        if (cluster.protocol !== "https:" || cluster.username || cluster.password || cluster.pathname !== "/" || cluster.search || cluster.hash) {
+          throw new Error("Configure the FinOps Hub HTTPS cluster origin before uploading this report.");
+        }
+        if (typeof window.sreagent?.callTool !== "function") throw new Error("Open this file as an Azure SRE Agent Live Report with the Kusto tool enabled.");
+        const end = new Date();
+        end.setUTCHours(0, 0, 0, 0);
+        const start = new Date(end.getTime() - 30 * 86400000);
+        const week = new Date(end.getTime() - 7 * 86400000);
+        const query = `let windowEnd = datetime(${end.toISOString()});
+let windowStart = datetime(${start.toISOString()});
+let weekStart = datetime(${week.toISOString()});
 Costs()
-| where ChargePeriodStart >= startDate and ChargePeriodStart < endDate
-${profileFilter}
-${currencyFilter}
-| where PricingCategory == 'Standard' and ChargeCategory == 'Usage'
-| extend MeterId = tostring(x_SkuMeterId)
-| lookup kind=inner (spEligibleMeters | project MeterId = x_SkuMeterId, Sp1yUnitPrice, Sp3yUnitPrice) on MeterId
-| extend Ratio1y = iff(ContractedUnitPrice > 0 and Sp1yUnitPrice > 0 and Sp1yUnitPrice < ContractedUnitPrice, Sp1yUnitPrice / ContractedUnitPrice, 0.72)
-| extend Ratio3y = iff(ContractedUnitPrice > 0 and Sp3yUnitPrice > 0 and Sp3yUnitPrice < ContractedUnitPrice, Sp3yUnitPrice / ContractedUnitPrice, 0.52)
-| summarize
-    PaygCost = todouble(sum(EffectiveCost)),
-    Sp1yEquivalentCost = todouble(sum(EffectiveCost * Ratio1y)),
-    Sp3yEquivalentCost = todouble(sum(EffectiveCost * Ratio3y)),
-    SubAccountName = take_any(SubAccountName)
-  by Hour = bin(ChargePeriodStart, 1h), SubAccountId
-| order by Hour asc`;
-    }
-
-    function normalizeInventory(rows, scopeInfo) {
-      const now = Date.now();
-      const plans = rows.map((row) => {
-        const termMonths = Number(row.SkuTermMonths || 36);
-        const term = termMonths <= 12 ? 'P1Y' : 'P3Y';
-        const hours30d = Math.max(24, Number(row.Hours30d || 720));
-        const total30d = Number(row.Total30d || 0);
-        const used30d = Number(row.Used30d || 0);
-        const total7d = Number(row.Total7d || 0);
-        const used7d = Number(row.Used7d || 0);
-        const hourlyCommitment = round(total30d / hours30d, 3);
-        const utilization30d = round(total30d > 0 ? (used30d / total30d) * 100 : 0, 2);
-        const utilization7d = round(total7d > 0 ? (used7d / total7d) * 100 : utilization30d, 2);
-        const primaryUsed = Number(row.PrimarySubUsed30d || 0);
-        const inScopePct = round(used30d > 0 ? Math.min(100, (primaryUsed / used30d) * 100) : 100, 1);
-        const otherScopesPct = round(Math.max(0, 100 - inScopePct), 1);
-
-        const firstSeenDate = row.FirstSeen ? new Date(row.FirstSeen) : new Date(now);
-        const lastSeenDate = row.LastSeen ? new Date(row.LastSeen) : new Date(now);
-        const estExpiry = new Date(Date.UTC(
-          firstSeenDate.getUTCFullYear() + (term === 'P1Y' ? 1 : 3),
-          firstSeenDate.getUTCMonth(),
-          firstSeenDate.getUTCDate()
-        ));
-        const daysRemaining = Math.max(0, Math.ceil((estExpiry.getTime() - now) / 86400000));
-
-        const rawId = String(row.CommitmentDiscountId || '');
-        const idParts = rawId.split('/').filter(Boolean);
-        const shortId = idParts[idParts.length - 1] || rawId;
-
-        return {
-          id: rawId,
-          orderId: row.OrderId || idParts[idParts.length - 3] || '',
-          planId: shortId,
-          displayName: row.CommitmentDiscountName || row.OrderName || shortId,
-          skuName: 'Compute_Savings_Plan',
-          provisioningState: 'Succeeded',
-          term,
-          billingScopeId: row.BillingProfileId || scopeInfo.billingProfileId || '',
-          appliedScopeType: Number(row.DistinctSubs || 0) > 1 ? 'Shared' : 'Single',
-          appliedScopeDisplayName: Number(row.DistinctSubs || 0) > 1
-            ? `${row.BillingProfileName || 'Shared Billing Profile'} (${row.DistinctSubs} subs)`
-            : (row.PrimarySubName || row.BillingProfileName || 'Primary Subscription'),
-          billingPlan: 'P1M',
-          renew: false,
-          effectiveDate: firstSeenDate.toISOString(),
-          lastSeenDate: lastSeenDate.toISOString(),
-          expiryDate: estExpiry.toISOString(),
-          daysRemaining,
-          currencyCode: row.BillingCurrency || scopeInfo.currency || 'USD',
-          hourlyCommitment,
-          monthlyCommitment: round(hourlyCommitment * HOURS_PER_MONTH),
-          annualCommitment: round(hourlyCommitment * HOURS_PER_YEAR),
-          utilization30d,
-          utilization7d,
-          inScopePct,
-          otherScopesPct,
-          inScopeSubscriptionId: row.PrimarySubName || row.PrimarySubId || null
-        };
-      });
-
-      const totalHourly = plans.reduce((sum, p) => sum + p.hourlyCommitment, 0);
-      const weighted30d = totalHourly > 0
-        ? plans.reduce((sum, p) => sum + p.utilization30d * p.hourlyCommitment, 0) / totalHourly
-        : 0;
-      const weighted7d = totalHourly > 0
-        ? plans.reduce((sum, p) => sum + p.utilization7d * p.hourlyCommitment, 0) / totalHourly
-        : 0;
-      const utils30 = plans.map((p) => p.utilization30d);
-
-      return {
-        plans,
-        summary: {
-          planCount: plans.length,
-          activePlanCount: plans.length,
-          currencyCode: scopeInfo.currency || 'USD',
-          hourlyCommitment: round(totalHourly, 2),
-          monthlyCommitment: round(totalHourly * HOURS_PER_MONTH),
-          annualizedCommitment: round(totalHourly * HOURS_PER_YEAR),
-          weightedUtilization30d: round(weighted30d, 2),
-          weightedUtilization7d: round(weighted7d, 2),
-          minUtilization30d: utils30.length ? round(Math.min(...utils30), 2) : 0,
-          maxUtilization30d: utils30.length ? round(Math.max(...utils30), 2) : 0
-        }
-      };
-    }
-
-    function buildCurveFromHourlySeries(hourlyRows, lookBackPeriod, term, scope, endDateIso, currencyCode, targetSubId = null) {
-      const lookbackDays = lookBackPeriod === 'Last7Days' ? 7 : (lookBackPeriod === 'Last60Days' ? 60 : 30);
-      const totalHours = lookbackDays * 24;
-      const endMs = new Date(endDateIso).getTime();
-      const startMs = endMs - totalHours * 3600000;
-
-      const byHour = new Map();
-      let sumPayg = 0;
-      let sumSpEquiv = 0;
-
-      for (const row of hourlyRows) {
-        if (scope === 'Single' && targetSubId && row.SubAccountId !== targetSubId) continue;
-        const t = new Date(row.Hour).getTime();
-        if (!Number.isFinite(t) || t < startMs || t >= endMs) continue;
-        const hourKey = Math.floor((t - startMs) / 3600000);
-        const payg = Number(row.PaygCost || 0);
-        const spEquiv = Number(term === 'P1Y' ? row.Sp1yEquivalentCost : row.Sp3yEquivalentCost) || (payg * (term === 'P1Y' ? 0.72 : 0.52));
-        const prev = byHour.get(hourKey) || { payg: 0, spEquiv: 0 };
-        prev.payg += payg;
-        prev.spEquiv += spEquiv;
-        byHour.set(hourKey, prev);
-        sumPayg += payg;
-        sumSpEquiv += spEquiv;
-      }
-
-      const avgRatio = sumPayg > 0 ? Math.min(0.95, Math.max(0.25, sumSpEquiv / sumPayg)) : (term === 'P1Y' ? 0.72 : 0.52);
-      const hoursArray = [];
-      let maxSpEquivHour = 0;
-      for (let h = 0; h < totalHours; h += 1) {
-        const entry = byHour.get(h) || { payg: 0, spEquiv: 0 };
-        hoursArray.push(entry);
-        if (entry.spEquiv > maxSpEquivHour) maxSpEquivHour = entry.spEquiv;
-      }
-
-      const annualFactor = HOURS_PER_YEAR / totalHours;
-      const costWithoutBenefit = round(sumPayg);
-
-      const candidateSet = new Set([0]);
-      if (maxSpEquivHour > 0) {
-        for (let i = 1; i <= 20; i += 1) {
-          candidateSet.add(round((maxSpEquivHour * i) / 20, 3));
-        }
-      }
-      const candidates = Array.from(candidateSet).sort((a, b) => a - b);
-
-      function evaluateCommitment(c) {
-        const commit = round(c, 3);
-        const benefitCost = commit * totalHours;
-        let usedBenefit = 0;
-        let overageCost = 0;
-        for (let h = 0; h < totalHours; h += 1) {
-          const { payg, spEquiv } = hoursArray[h];
-          if (spEquiv <= 0 || payg <= 0) continue;
-          if (spEquiv <= commit) {
-            usedBenefit += spEquiv;
-          } else {
-            usedBenefit += commit;
-            const uncoveredFraction = (spEquiv - commit) / spEquiv;
-            overageCost += payg * uncoveredFraction;
-          }
-        }
-        const wastageCost = Math.max(0, benefitCost - usedBenefit);
-        const totalCost = benefitCost + overageCost;
-        const savingsAmount = costWithoutBenefit - totalCost;
-        const utilizationPct = benefitCost > 0 ? (usedBenefit / benefitCost) * 100 : 100;
-        const coveragePct = costWithoutBenefit > 0
-          ? ((costWithoutBenefit - overageCost) / costWithoutBenefit) * 100
-          : 0;
-        const savingsPct = costWithoutBenefit > 0
-          ? (savingsAmount / costWithoutBenefit) * 100
-          : 0;
-
-        return {
-          commitmentAmount: commit,
-          coveragePct: round(coveragePct, 2),
-          utilizationPct: round(utilizationPct, 2),
-          benefitCost: round(benefitCost),
-          overageCost: round(overageCost),
-          totalCost: round(totalCost),
-          savingsAmount: round(savingsAmount),
-          savingsPct: round(savingsPct, 2),
-          wastageCost: round(wastageCost),
-          annualCommitment: round(commit * HOURS_PER_YEAR),
-          annualSavings: round(savingsAmount * annualFactor),
-          annualBenefitCost: round(benefitCost * annualFactor),
-          annualOverageCost: round(overageCost * annualFactor),
-          annualWastageCost: round(wastageCost * annualFactor),
-          annualTotalCost: round(totalCost * annualFactor)
-        };
-      }
-
-      const evaluated = candidates.map(evaluateCommitment);
-      let bestPoint = evaluated[0];
-      for (const pt of evaluated) {
-        if (pt.savingsAmount > bestPoint.savingsAmount) bestPoint = pt;
-      }
-
-      const curveCandidates = new Set([0]);
-      if (bestPoint.commitmentAmount > 0) {
-        [0.2, 0.4, 0.6, 0.7, 0.8, 0.9, 1.0, 1.15, 1.3, 1.5].forEach((mult) => {
-          curveCandidates.add(round(bestPoint.commitmentAmount * mult, 3));
-        });
-      } else if (maxSpEquivHour > 0) {
-        [0.1, 0.25, 0.5, 0.75, 1.0].forEach((mult) => {
-          curveCandidates.add(round(maxSpEquivHour * mult, 3));
-        });
-      }
-      const curve = Array.from(curveCandidates)
-        .filter((c) => c > 0)
-        .sort((a, b) => a - b)
-        .map(evaluateCommitment);
-
-      if (curve.length === 0) {
-        curve.push(evaluateCommitment(0));
-      }
-
-      const recPoint = bestPoint.commitmentAmount > 0 ? bestPoint : curve[0];
-      return {
-        id: `${scope}-${term}-${lookBackPeriod}-${targetSubId || 'all'}`,
-        name: `${scope}-${term}-${lookBackPeriod}`,
-        skuName: 'Compute_Savings_Plan',
-        skuLabel: skuLabel('Compute_Savings_Plan'),
-        scope,
-        subscriptionId: targetSubId,
-        term,
-        termLabel: termLabel(term),
-        lookBackPeriod,
-        totalHours,
-        currencyCode: currencyCode || 'USD',
-        firstConsumptionDate: new Date(startMs).toISOString().slice(0, 10),
-        lastConsumptionDate: new Date(endMs).toISOString().slice(0, 10),
-        costWithoutBenefit,
-        annualCostWithoutBenefit: round(costWithoutBenefit * annualFactor),
-        recommended: {
-          commitmentAmount: recPoint.commitmentAmount,
-          annualCommitment: recPoint.annualCommitment,
-          monthlyCommitment: round(recPoint.commitmentAmount * HOURS_PER_MONTH),
-          coveragePct: recPoint.coveragePct,
-          utilizationPct: recPoint.utilizationPct,
-          benefitCost: recPoint.benefitCost,
-          overageCost: recPoint.overageCost,
-          totalCost: recPoint.totalCost,
-          savingsAmount: recPoint.savingsAmount,
-          savingsPct: recPoint.savingsPct,
-          wastageCost: recPoint.wastageCost,
-          annualSavings: recPoint.annualSavings,
-          annualWastage: recPoint.annualWastageCost,
-          discountRatio: round(1 - avgRatio, 3)
-        },
-        curve
-      };
-    }
-
-    function projectScenario(recommendation, targetCommitment) {
-      if (!recommendation) return null;
-      const totalHours = recommendation.totalHours || 720;
-      const annualFactor = HOURS_PER_YEAR / totalHours;
-      const baseCost = recommendation.costWithoutBenefit;
-      const amount = Math.max(0, Number(targetCommitment || 0));
-
-      if (amount === 0 || recommendation.curve.length === 0) {
-        return {
-          commitmentAmount: 0,
-          monthlyCommitment: 0,
-          annualCommitment: 0,
-          coveragePct: 0,
-          utilizationPct: 100,
-          benefitCost: 0,
-          overageCost: round(baseCost),
-          totalCost: round(baseCost),
-          savingsAmount: 0,
-          savingsPct: 0,
-          wastageCost: 0,
-          annualSavings: 0,
-          annualBenefitCost: 0,
-          annualOverageCost: round(baseCost * annualFactor),
-          annualWastageCost: 0,
-          annualTotalCost: round(baseCost * annualFactor)
-        };
-      }
-
-      const curve = recommendation.curve;
-      if (amount <= curve[0].commitmentAmount) {
-        if (curve[0].commitmentAmount <= 0) return curve[0];
-        const ratio = amount / curve[0].commitmentAmount;
-        const benefitCost = amount * totalHours;
-        const usedBenefit = curve[0].benefitCost * (curve[0].utilizationPct / 100) * ratio;
-        const wastageCost = Math.max(0, benefitCost - usedBenefit);
-        const overageCost = Math.max(0, baseCost - (baseCost - curve[0].overageCost) * ratio);
-        const totalCost = benefitCost + overageCost;
-        const savingsAmount = baseCost - totalCost;
-        return {
-          commitmentAmount: round(amount, 2),
-          monthlyCommitment: round(amount * HOURS_PER_MONTH),
-          annualCommitment: round(amount * HOURS_PER_YEAR),
-          coveragePct: round(curve[0].coveragePct * ratio, 2),
-          utilizationPct: round(benefitCost > 0 ? (usedBenefit / benefitCost) * 100 : 100, 2),
-          benefitCost: round(benefitCost),
-          overageCost: round(overageCost),
-          totalCost: round(totalCost),
-          savingsAmount: round(savingsAmount),
-          savingsPct: round(baseCost > 0 ? (savingsAmount / baseCost) * 100 : 0, 2),
-          wastageCost: round(wastageCost),
-          annualSavings: round(savingsAmount * annualFactor),
-          annualBenefitCost: round(benefitCost * annualFactor),
-          annualOverageCost: round(overageCost * annualFactor),
-          annualWastageCost: round(wastageCost * annualFactor),
-          annualTotalCost: round(totalCost * annualFactor)
-        };
-      }
-
-      for (let i = 0; i < curve.length - 1; i += 1) {
-        const left = curve[i];
-        const right = curve[i + 1];
-        if (amount >= left.commitmentAmount && amount <= right.commitmentAmount) {
-          const span = right.commitmentAmount - left.commitmentAmount;
-          const t = span > 0 ? (amount - left.commitmentAmount) / span : 0;
-          const lerp = (a, b) => a + (b - a) * t;
-          const benefitCost = amount * totalHours;
-          const overageCost = lerp(left.overageCost, right.overageCost);
-          const wastageCost = lerp(left.wastageCost, right.wastageCost);
-          const totalCost = benefitCost + overageCost;
-          const savingsAmount = baseCost - totalCost;
-          return {
-            commitmentAmount: round(amount, 2),
-            monthlyCommitment: round(amount * HOURS_PER_MONTH),
-            annualCommitment: round(amount * HOURS_PER_YEAR),
-            coveragePct: round(lerp(left.coveragePct, right.coveragePct), 2),
-            utilizationPct: round(lerp(left.utilizationPct, right.utilizationPct), 2),
-            benefitCost: round(benefitCost),
-            overageCost: round(overageCost),
-            totalCost: round(totalCost),
-            savingsAmount: round(savingsAmount),
-            savingsPct: round(baseCost > 0 ? (savingsAmount / baseCost) * 100 : 0, 2),
-            wastageCost: round(wastageCost),
-            annualSavings: round(savingsAmount * annualFactor),
-            annualBenefitCost: round(benefitCost * annualFactor),
-            annualOverageCost: round(overageCost * annualFactor),
-            annualWastageCost: round(wastageCost * annualFactor),
-            annualTotalCost: round(totalCost * annualFactor)
-          };
-        }
-      }
-
-      const last = curve[curve.length - 1];
-      const extraCommit = amount - last.commitmentAmount;
-      const extraBenefitCost = extraCommit * totalHours;
-      const benefitCost = last.benefitCost + extraBenefitCost;
-      const overageCost = last.overageCost;
-      const wastageCost = last.wastageCost + extraBenefitCost;
-      const totalCost = benefitCost + overageCost;
-      const savingsAmount = baseCost - totalCost;
-      const usedBenefit = Math.max(0, benefitCost - wastageCost);
-
-      return {
-        commitmentAmount: round(amount, 2),
-        monthlyCommitment: round(amount * HOURS_PER_MONTH),
-        annualCommitment: round(amount * HOURS_PER_YEAR),
-        coveragePct: last.coveragePct,
-        utilizationPct: round(benefitCost > 0 ? (usedBenefit / benefitCost) * 100 : 0, 2),
-        benefitCost: round(benefitCost),
-        overageCost: round(overageCost),
-        totalCost: round(totalCost),
-        savingsAmount: round(savingsAmount),
-        savingsPct: round(baseCost > 0 ? (savingsAmount / baseCost) * 100 : 0, 2),
-        wastageCost: round(wastageCost),
-        annualSavings: round(savingsAmount * annualFactor),
-        annualBenefitCost: round(benefitCost * annualFactor),
-        annualOverageCost: round(overageCost * annualFactor),
-        annualWastageCost: round(wastageCost * annualFactor),
-        annualTotalCost: round(totalCost * annualFactor)
-      };
-    }
-
-    const fmtCurrency = (val, digits = 0, currency = 'USD') => {
-      const n = Number(val);
-      if (!Number.isFinite(n)) return '—';
-      try {
-        return new Intl.NumberFormat('en-US', {
-          style: 'currency',
-          currency: currency || 'USD',
-          minimumFractionDigits: digits,
-          maximumFractionDigits: digits
-        }).format(n);
-      } catch (_) {
-        return `$${n.toFixed(digits)}`;
-      }
-    };
-
-    const fmtPct = (val, digits = 1) => {
-      const n = Number(val);
-      if (!Number.isFinite(n)) return '—';
-      return `${n.toFixed(digits)}%`;
-    };
-
-    const state = {
-      data: null,
-      hourlyRows: [],
-      scope: 'Shared',
-      subscriptionId: null,
-      term: 'P3Y',
-      lookBackPeriod: 'Last30Days',
-      minUtilization: 90,
-      sliderPct: 100
-    };
-
-    function utilBadgeClass(pct) {
-      if (pct >= 90) return 'badge-good';
-      if (pct >= 80) return 'badge-warn';
-      return 'badge-risk';
-    }
-
-    function riskPosture(utilPct) {
-      if (utilPct >= 95) return { label: 'Low Risk · Core Base', cls: 'badge-good' };
-      if (utilPct >= 88) return { label: 'Balanced · Target Fit', cls: 'badge-good' };
-      if (utilPct >= 75) return { label: 'Moderate · Elastic Buffer', cls: 'badge-warn' };
-      return { label: 'High Waste Risk', cls: 'badge-risk' };
-    }
-
-    function rebuildRecommendations() {
-      if (!state.data) return;
-      const { period, scope } = state.data;
-      const recs = [];
-      for (const sc of ['Shared', 'Single']) {
-        for (const term of ['P1Y', 'P3Y']) {
-          for (const lb of ['Last7Days', 'Last30Days', 'Last60Days']) {
-            recs.push(
-              buildCurveFromHourlySeries(
-                state.hourlyRows,
-                lb,
-                term,
-                sc,
-                period.endDate,
-                scope.currency,
-                sc === 'Single' ? state.subscriptionId : null
-              )
-            );
-          }
-        }
-      }
-      state.data.recommendations = recs;
-    }
-
-    function findActiveRecommendation() {
-      if (!state.data?.recommendations?.length) return null;
-      return (
-        state.data.recommendations.find(
-          (r) =>
-            r.scope === state.scope &&
-            r.term === state.term &&
-            r.lookBackPeriod === state.lookBackPeriod
-        ) || state.data.recommendations[0]
-      );
-    }
-
-    function optimalPointForGuardrail(rec) {
-      if (!rec) return null;
-      const eligible = rec.curve.filter(
-        (pt) => pt.utilizationPct >= state.minUtilization && pt.savingsAmount > 0
-      );
-      if (eligible.length > 0) {
-        return eligible.reduce((best, cur) =>
-          cur.savingsAmount > best.savingsAmount ? cur : best
-        );
-      }
-      return rec.recommended;
-    }
-
-    function renderHeaderAndKpis() {
-      const { summary, plans, coverage, scope, generatedAt } = state.data;
-      const currency = scope.currency || 'USD';
-      document.getElementById('meta-scope').textContent =
-        `${scope.displayName} (${currency})`;
-      document.getElementById('meta-cluster').textContent =
-        `${CLUSTER_URI.replace(/^https?:\/\//, '')} / ${DATABASE}`;
-      document.getElementById('meta-pricing').textContent =
-        `${scope.savingsPlanPriceRows.toLocaleString('en-US')} SP price rows`;
-      document.getElementById('meta-updated').textContent = new Date(generatedAt).toLocaleTimeString();
-
-      document.getElementById('kpi-active-plans').textContent =
-        `${summary.activePlanCount} / ${summary.planCount}`;
-      document.getElementById('kpi-active-plans-sub').textContent =
-        plans.length > 0
-          ? `${plans.filter((p) => p.term === 'P3Y').length} × 3-Year · ${plans.filter((p) => p.term === 'P1Y').length} × 1-Year`
-          : 'No active Compute Savings Plans in window';
-
-      document.getElementById('kpi-hourly-commit').textContent =
-        `${fmtCurrency(summary.hourlyCommitment, 2, currency)}/hr`;
-      document.getElementById('kpi-annual-commit').textContent =
-        `${fmtCurrency(summary.annualizedCommitment, 0, currency)}/yr (${fmtCurrency(summary.monthlyCommitment, 0, currency)}/mo)`;
-
-      document.getElementById('kpi-util-30d').textContent =
-        fmtPct(summary.weightedUtilization30d, 1);
-      document.getElementById('kpi-util-range').textContent =
-        plans.length > 0
-          ? `7d: ${fmtPct(summary.weightedUtilization7d, 1)} · Range: ${fmtPct(summary.minUtilization30d, 1)}–${fmtPct(summary.maxUtilization30d, 1)}`
-          : '0% committed utilization';
-
-      if (coverage?.summary) {
-        document.getElementById('kpi-best-savings').textContent =
-          fmtPct(coverage.summary.coveragePct, 1);
-        document.getElementById('kpi-best-savings-sub').textContent =
-          `${fmtCurrency(coverage.summary.uncoveredPaygEffective, 0, currency)} uncovered PAYG (30d) · ${fmtCurrency(coverage.summary.savingsPlanRealizedSavings, 0, currency)} saved`;
+| where ChargePeriodStart >= windowStart and ChargePeriodStart < windowEnd
+| where CommitmentDiscountType == 'Savings Plan' and ChargeCategory == 'Usage'
+| where CommitmentDiscountStatus in ('Used', 'Unused') and isnotempty(CommitmentDiscountId)
+| extend InvalidCost = isnull(EffectiveCost) or not(isfinite(EffectiveCost)) or EffectiveCost < 0
+| summarize PlanName = take_any(CommitmentDiscountName), LatestUsage = max(ChargePeriodStart),
+    Used30 = sumif(EffectiveCost, CommitmentDiscountStatus == 'Used'),
+    Unused30 = sumif(EffectiveCost, CommitmentDiscountStatus == 'Unused'),
+    Invalid30 = countif(InvalidCost), Records30 = count(),
+    Reported30 = make_set(startofday(ChargePeriodStart), 31),
+    Used7 = sumif(EffectiveCost, CommitmentDiscountStatus == 'Used' and ChargePeriodStart >= weekStart),
+    Unused7 = sumif(EffectiveCost, CommitmentDiscountStatus == 'Unused' and ChargePeriodStart >= weekStart),
+    Invalid7 = countif(InvalidCost and ChargePeriodStart >= weekStart),
+    Records7 = countif(ChargePeriodStart >= weekStart),
+    Reported7 = make_set_if(startofday(ChargePeriodStart), ChargePeriodStart >= weekStart, 8)
+    by BenefitId = CommitmentDiscountId, Account = tostring(BillingAccountId),
+       Profile = tostring(x_BillingProfileId), Currency = BillingCurrency
+| extend Days7 = array_length(Reported7), Days30 = array_length(Reported30)
+| project-away Reported7, Reported30
+| order by Account asc, Profile asc, BenefitId asc, Currency asc`;
+        byId("source-target").textContent = `Kusto target: ${cluster.origin} / ${DATABASE}; tool: ${TOOL_NAME}.`;
+        const raw = await window.sreagent.callTool(TOOL_NAME, { "cluster-uri": CLUSTER_URI, database: DATABASE, query });
+        render(parseToolResult(raw));
+        byId("period").textContent = `${dateFormat.format(start)} - ${dateFormat.format(new Date(end.getTime() - 86400000))} (UTC)`;
+        byId("refreshed").textContent = `Refreshed ${new Date().toLocaleTimeString()}`;
+        byId("status").textContent = "Observed utilization loaded; Azure recommendations and inventory unavailable";
+        byId("status").dataset.state = "ready";
+      } catch (error) {
+        byId("plan-count").textContent = "\u2014";
+        byId("lowest").textContent = "\u2014";
+        tableMessage("Observed utilization is unavailable. No cached or substitute results are displayed.");
+        byId("status").textContent = "Live source unavailable";
+        byId("status").dataset.state = "error";
+        byId("period").textContent = "Reporting period unavailable";
+        byId("error-detail").textContent = error instanceof Error ? error.message : String(error);
+        byId("error").hidden = false;
+        console.error("Savings-plan Live Report failed:", error);
+      } finally {
+        byId("plans").setAttribute("aria-busy", "false");
+        button.disabled = false;
+        button.textContent = "Refresh data";
       }
     }
-
-    function renderInventoryTable() {
-      const tbody = document.getElementById('plans-body');
-      const { plans, period, scope } = state.data;
-      const currency = scope.currency || 'USD';
-      document.getElementById('plans-period').textContent =
-        `Window: ${period.startDate.slice(0, 10)} → ${period.endDate.slice(0, 10)} · All plans non-cancelable`;
-
-      if (!plans.length) {
-        tbody.innerHTML = '<tr><td colspan="7">No active savings plans found in FinOps Hub Costs() for this window.</td></tr>';
-        return;
-      }
-
-      tbody.innerHTML = plans
-        .map((p) => {
-          const badgeCls = utilBadgeClass(p.utilization30d);
-          return `
-            <tr>
-              <td>
-                <div class="plan-name">${p.displayName}</div>
-                <div class="plan-id">${p.planId}</div>
-              </td>
-              <td>
-                <span class="badge badge-neutral">${termLabel(p.term)}</span>
-              </td>
-              <td>
-                <div><strong>${p.appliedScopeType}</strong> · ${p.appliedScopeDisplayName}</div>
-                <div class="plan-id">Billing: ${p.billingPlan === 'P1M' ? 'Monthly' : p.billingPlan}</div>
-              </td>
-              <td class="num">
-                <div><strong>${fmtCurrency(p.hourlyCommitment, 2, currency)}/hr</strong></div>
-                <div style="font-size:11px;color:var(--ink-secondary)">${fmtCurrency(p.monthlyCommitment, 0, currency)}/mo · ${fmtCurrency(p.annualCommitment, 0, currency)}/yr</div>
-              </td>
-              <td class="num">
-                <div>
-                  <span class="badge ${badgeCls}">${fmtPct(p.utilization30d, 1)} (30d)</span>
-                </div>
-                <div style="font-size:11px;color:var(--ink-secondary);margin-top:3px">7d: ${fmtPct(p.utilization7d, 1)}</div>
-                <div class="util-bar"><div class="util-fill" style="width:${Math.min(100, p.utilization30d)}%"></div></div>
-              </td>
-              <td>
-                <div class="mono" style="font-size:12px">${fmtPct(p.inScopePct, 1)} primary sub / ${fmtPct(p.otherScopesPct, 1)} shared</div>
-                <div class="plan-id">${p.inScopeSubscriptionId ? `Top: ${p.inScopeSubscriptionId}` : 'Shared profile utilization'}</div>
-              </td>
-              <td class="num">
-                <div>${p.effectiveDate.slice(0, 10)} → ${p.lastSeenDate.slice(0, 10)}</div>
-                <div style="font-size:11px;color:var(--ink-secondary)">Est. ${p.daysRemaining}d remaining on ${termLabel(p.term)}</div>
-              </td>
-            </tr>
-          `;
-        })
-        .join('');
-    }
-
-    function renderCoverageSection() {
-      const cov = state.data.coverage;
-      const currency = state.data.scope.currency || 'USD';
-      const summaryEl = document.getElementById('coverage-summary');
-      const famBody = document.getElementById('family-coverage-body');
-      const skuBody = document.getElementById('uncovered-skus-body');
-
-      if (!cov || !cov.summary) {
-        summaryEl.innerHTML = '<div class="proj-item"><div class="label">Coverage</div><div class="val">Unavailable</div></div>';
-        return;
-      }
-
-      const s = cov.summary;
-      document.getElementById('coverage-window').textContent =
-        `Kusto Hub · ${cov.period.startDate.slice(0, 10)} → ${cov.period.endDate.slice(0, 10)} (${cov.period.hours}h) · ${s.spEligibleMeterCount.toLocaleString('en-US')} SP-eligible meters in Prices()`;
-
-      summaryEl.innerHTML = `
-        <div class="proj-item">
-          <div class="label">SP-Covered Compute (30d)</div>
-          <div class="val" style="color:var(--status-good)">${fmtCurrency(s.savingsPlanUsedEffective, 0, currency)}</div>
-          <div class="sub">Contracted PAYG eq: ${fmtCurrency(s.savingsPlanUsedContracted, 0, currency)} (${fmtCurrency(s.savingsPlanRealizedSavings, 0, currency)} saved · ${fmtPct(s.effectiveDiscountPct, 1)} off)</div>
-        </div>
-        <div class="proj-item">
-          <div class="label">Uncovered Eligible PAYG (30d)</div>
-          <div class="val" style="color:var(--status-warn)">${fmtCurrency(s.uncoveredPaygEffective, 0, currency)}</div>
-          <div class="sub">${fmtCurrency(s.uncoveredPaygEffective / (cov.period.hours || 720), 2, currency)}/hr avg uncovered compute</div>
-        </div>
-        <div class="proj-item">
-          <div class="label">Observed Benefit Coverage</div>
-          <div class="val">${fmtPct(s.coveragePct, 1)}</div>
-          <div class="sub">${fmtPct(s.contractedCoveragePct, 1)} of on-demand equivalent (${fmtCurrency(s.totalEligibleComputeEffective, 0, currency)} total)</div>
-        </div>
-        <div class="proj-item">
-          <div class="label">Unused Commitment Waste (30d)</div>
-          <div class="val">${fmtCurrency(s.savingsPlanUnusedEffective, 2, currency)}</div>
-          <div class="sub">Utilization: ${fmtPct(s.utilizationFromCostPct, 1)} · Waste: ${fmtPct(s.wastePct, 1)}</div>
-        </div>
-      `;
-
-      famBody.innerHTML = cov.byFamily
-        .map((f) => {
-          const cls = f.coveragePct >= 75 ? 'badge-good' : f.coveragePct >= 40 ? 'badge-warn' : 'badge-risk';
-          return `
-            <tr>
-              <td>
-                <div class="plan-name">${f.family}</div>
-                <div class="plan-id">${(f.sampleMeters || []).slice(0, 2).join(' · ')}</div>
-              </td>
-              <td class="num">${fmtCurrency(f.spCoveredEffective, 0, currency)}</td>
-              <td class="num">${fmtCurrency(f.uncoveredPaygEffective, 0, currency)}</td>
-              <td class="num"><span class="badge ${cls}">${fmtPct(f.coveragePct, 1)}</span></td>
-            </tr>
-          `;
-        })
-        .join('');
-
-      skuBody.innerHTML = cov.topUncoveredSkus
-        .map((sku) => {
-          const hasPrices = sku.sp3yUnitPrice > 0 || sku.sp1yUnitPrice > 0;
-          return `
-            <tr>
-              <td>
-                <div class="plan-name">${sku.description}</div>
-                <div class="plan-id">${sku.serviceName} · ${sku.activeDays}d active</div>
-              </td>
-              <td>
-                <div>${sku.subAccountName}</div>
-                <div class="plan-id">${sku.region || 'global'} · ${sku.pricingUnit}</div>
-              </td>
-              <td class="num"><strong>${fmtCurrency(sku.uncoveredEffectiveCost, 0, currency)}</strong></td>
-              <td class="num">${fmtCurrency(sku.avgHourlyPaygCost, 2, currency)}/hr</td>
-              <td class="num">
-                ${hasPrices
-                  ? `${fmtCurrency(sku.contractedUnitPrice, 3, currency)} → ${fmtCurrency(sku.sp1yUnitPrice, 3, currency)} / <strong>${fmtCurrency(sku.sp3yUnitPrice, 3, currency)}</strong>`
-                  : `${fmtCurrency(sku.contractedUnitPrice, 3, currency)}`}
-              </td>
-              <td class="num">
-                ${hasPrices
-                  ? `<span class="badge badge-neutral">1Y: ${fmtPct(sku.sp1yDiscountPct, 0)}</span> <span class="badge badge-good">3Y: ${fmtPct(sku.sp3yDiscountPct, 0)}</span>`
-                  : '<span class="badge badge-neutral">—</span>'}
-              </td>
-              <td class="num" style="color:var(--status-good);font-weight:600">
-                ${sku.est3yAnnualSavingsIfCovered > 0 ? `${fmtCurrency(sku.est3yAnnualSavingsIfCovered, 0, currency)}/yr` : '—'}
-              </td>
-            </tr>
-          `;
-        })
-        .join('');
-    }
-
-    function renderRecommendationMatrix() {
-      const grid = document.getElementById('recommendations-grid');
-      const currency = state.data.scope.currency || 'USD';
-      const scoped = state.data.recommendations.filter((r) => r.scope === state.scope);
-
-      grid.innerHTML = scoped
-        .map((r) => {
-          const isSelected = r.term === state.term && r.lookBackPeriod === state.lookBackPeriod;
-          const pt = optimalPointForGuardrail(r);
-          return `
-            <div class="rec-card ${isSelected ? 'selected' : ''}" data-term="${r.term}" data-lookback="${r.lookBackPeriod}">
-              <div class="rec-card-head">
-                <span>${r.termLabel} · ${r.lookBackPeriod.replace('Last', '').replace('Days', 'd')}</span>
-                <span class="badge ${utilBadgeClass(pt.utilizationPct)}">${fmtPct(pt.utilizationPct, 0)} util</span>
-              </div>
-              <div class="rec-card-commit">${fmtCurrency(pt.commitmentAmount, 2, currency)}/hr</div>
-              <div class="rec-card-meta">
-                <span>Save ${fmtCurrency(pt.annualSavings, 0, currency)}/yr (${fmtPct(pt.savingsPct, 1)})</span>
-                <span>Cov ${fmtPct(pt.coveragePct, 0)}</span>
-              </div>
-            </div>
-          `;
-        })
-        .join('');
-
-      grid.querySelectorAll('.rec-card').forEach((card) => {
-        card.addEventListener('click', () => {
-          state.term = card.dataset.term;
-          state.lookBackPeriod = card.dataset.lookback;
-          syncControlButtons();
-          renderSimulator();
-        });
-      });
-    }
-
-    function renderSimulator() {
-      renderRecommendationMatrix();
-      const rec = findActiveRecommendation();
-      const projEl = document.getElementById('projection-metrics');
-      const curveBody = document.getElementById('curve-body');
-      const currency = state.data.scope.currency || 'USD';
-
-      if (!rec) {
-        projEl.innerHTML = '<div class="proj-item"><div class="label">Status</div><div class="val">No recommendation</div></div>';
-        curveBody.innerHTML = '<tr><td colspan="8">No curve points available.</td></tr>';
-        return;
-      }
-
-      const anchor = optimalPointForGuardrail(rec);
-      const targetCommit = round((anchor.commitmentAmount * state.sliderPct) / 100, 2);
-      const projected = projectScenario(rec, targetCommit);
-      const posture = riskPosture(projected.utilizationPct);
-
-      document.getElementById('slider-pct-label').textContent =
-        `${state.sliderPct}% (${fmtCurrency(projected.commitmentAmount, 2, currency)}/hr)`;
-      const scopeDesc = state.scope === 'Single' && state.subscriptionId
-        ? `Single (${state.subscriptionId})`
-        : state.scope;
-      document.getElementById('selected-summary').textContent =
-        `${rec.termLabel} · ${rec.lookBackPeriod} · ${scopeDesc} · Baseline PAYG: ${fmtCurrency(rec.annualCostWithoutBenefit, 0, currency)}/yr`;
-
-      projEl.innerHTML = `
-        <div class="proj-item">
-          <div class="label">Simulated Hourly Commit</div>
-          <div class="val">${fmtCurrency(projected.commitmentAmount, 2, currency)}/hr</div>
-          <div class="sub">${fmtCurrency(projected.monthlyCommitment, 0, currency)}/mo · ${fmtCurrency(projected.annualCommitment, 0, currency)}/yr</div>
-        </div>
-        <div class="proj-item">
-          <div class="label">Projected Annual Savings</div>
-          <div class="val" style="color:var(--status-good)">${fmtCurrency(projected.annualSavings, 0, currency)}/yr</div>
-          <div class="sub">${fmtPct(projected.savingsPct, 1)} vs PAYG (${fmtCurrency(projected.savingsAmount, 0, currency)} in ${rec.lookBackPeriod.replace('Last', '')})</div>
-        </div>
-        <div class="proj-item">
-          <div class="label">Projected Utilization</div>
-          <div class="val">${fmtPct(projected.utilizationPct, 1)}</div>
-          <div class="sub">Coverage: ${fmtPct(projected.coveragePct, 1)} of eligible compute</div>
-        </div>
-        <div class="proj-item">
-          <div class="label">Annual Overage &amp; Waste</div>
-          <div class="val">${fmtCurrency(projected.annualOverageCost, 0, currency)} PAYG</div>
-          <div class="sub">Unused commitment waste: ${fmtCurrency(projected.annualWastageCost, 0, currency)}/yr</div>
-        </div>
-      `;
-
-      curveBody.innerHTML = rec.curve
-        .map((pt) => {
-          const p = riskPosture(pt.utilizationPct);
-          const isAnchor = Math.abs(pt.commitmentAmount - anchor.commitmentAmount) < 0.01;
-          return `
-            <tr style="${isAnchor ? 'background:var(--accent-azure-soft);font-weight:600' : ''}">
-              <td class="num">${fmtCurrency(pt.commitmentAmount, 2, currency)}/hr ${isAnchor ? '★' : ''}</td>
-              <td class="num">${fmtCurrency(pt.annualCommitment, 0, currency)}/yr</td>
-              <td class="num">${fmtPct(pt.coveragePct, 1)}</td>
-              <td class="num"><span class="badge ${utilBadgeClass(pt.utilizationPct)}">${fmtPct(pt.utilizationPct, 1)}</span></td>
-              <td class="num">${fmtCurrency(pt.savingsAmount, 0, currency)} (${fmtPct(pt.savingsPct, 1)})</td>
-              <td class="num">${fmtCurrency(pt.annualSavings, 0, currency)}/yr</td>
-              <td class="num">${fmtCurrency(pt.annualWastageCost, 0, currency)}/yr</td>
-              <td><span class="badge ${p.cls}">${p.label}</span></td>
-            </tr>
-          `;
-        })
-        .join('');
-    }
-
-    function syncControlButtons() {
-      document.getElementById('label-scope').textContent = state.scope;
-      document.getElementById('label-term').textContent = `${termLabel(state.term)} (${state.term})`;
-      document.getElementById('label-lookback').textContent = state.lookBackPeriod;
-      document.getElementById('label-guardrail').textContent =
-        state.minUtilization > 0 ? `≥ ${state.minUtilization}%` : 'Max Savings';
-      document.getElementById('sub-select-group').hidden = state.scope !== 'Single';
-
-      document.querySelectorAll('#ctrl-scope button').forEach((b) =>
-        b.classList.toggle('active', b.dataset.scope === state.scope)
-      );
-      document.querySelectorAll('#ctrl-term button').forEach((b) =>
-        b.classList.toggle('active', b.dataset.term === state.term)
-      );
-      document.querySelectorAll('#ctrl-lookback button').forEach((b) =>
-        b.classList.toggle('active', b.dataset.lookback === state.lookBackPeriod)
-      );
-      document.querySelectorAll('#ctrl-guardrail button').forEach((b) =>
-        b.classList.toggle('active', Number(b.dataset.minUtil) === state.minUtilization)
-      );
-    }
-
-    function populateSubscriptionSelector(subAccounts) {
-      const select = document.getElementById('ctrl-subscription');
-      const eligibleSubs = (subAccounts || []).filter((s) => s.uncoveredPaygEffective > 0 || s.totalEligibleEffective > 0);
-      select.innerHTML = '';
-      eligibleSubs.forEach((sub) => {
-        const opt = document.createElement('option');
-        opt.value = sub.subAccountId;
-        opt.textContent = `${sub.subAccountName} (${fmtCurrency(sub.uncoveredPaygEffective, 0, state.data.scope.currency)} uncovered)`;
-        select.appendChild(opt);
-      });
-      if (eligibleSubs.length > 0 && !state.subscriptionId) {
-        state.subscriptionId = eligibleSubs[0].subAccountId;
-      }
-      select.value = state.subscriptionId || '';
-    }
-
-    function bindControls() {
-      document.querySelectorAll('#ctrl-scope button').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          state.scope = btn.dataset.scope;
-          syncControlButtons();
-          rebuildRecommendations();
-          renderSimulator();
-        });
-      });
-
-      document.getElementById('ctrl-subscription').addEventListener('change', (e) => {
-        state.subscriptionId = e.target.value;
-        rebuildRecommendations();
-        renderSimulator();
-      });
-
-      document.querySelectorAll('#ctrl-term button').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          state.term = btn.dataset.term;
-          syncControlButtons();
-          renderSimulator();
-        });
-      });
-
-      document.querySelectorAll('#ctrl-lookback button').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          state.lookBackPeriod = btn.dataset.lookback;
-          syncControlButtons();
-          renderSimulator();
-        });
-      });
-
-      document.querySelectorAll('#ctrl-guardrail button').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          state.minUtilization = Number(btn.dataset.minUtil);
-          syncControlButtons();
-          renderSimulator();
-        });
-      });
-
-      const slider = document.getElementById('slider-pct');
-      slider.addEventListener('input', () => {
-        state.sliderPct = Number(slider.value);
-        renderSimulator();
-      });
-
-      document.getElementById('btn-refresh').addEventListener('click', () => {
-        loadDashboard();
-      });
-    }
-
-    async function loadDashboard() {
-      const errEl = document.getElementById('error-banner');
-      errEl.style.display = 'none';
-      document.getElementById('meta-scope').textContent = 'Refreshing…';
-
-      try {
-        if (!CLUSTER_URI || !CLUSTER_URI.startsWith('https://')) {
-          throw new Error('Configure CLUSTER_URI with your FinOps Hub ADX cluster URI (or run node build-local.mjs for local preview).');
-        }
-
-        const spanRows = await runKusto(buildScopeAndPeriodQuery());
-        const span = spanRows[0] || {};
-        const endAnchor = span.MaxEnd ? startOfUtcDay(span.MaxEnd) : startOfUtcDay(new Date());
-        const start30d = addUtcDays(endAnchor, -30);
-        const start7d = addUtcDays(endAnchor, -7);
-        const start60d = addUtcDays(endAnchor, -60);
-
-        const period = {
-          startDate: start30d.toISOString(),
-          endDate: endAnchor.toISOString(),
-          start7d: start7d.toISOString(),
-          start60d: start60d.toISOString(),
-          hours: 720
-        };
-
-        const rawProfileId = String(span.BillingProfileId || '');
-        const profileParts = rawProfileId.split('/').filter(Boolean);
-        const shortProfileId = profileParts[profileParts.length - 1] || '';
-        const currency = span.BillingCurrency || 'USD';
-
-        const scopeInfo = {
-          billingAccountId: span.BillingAccountId || '',
-          billingProfileId: rawProfileId,
-          shortProfileId,
-          displayName: span.BillingProfileName || span.BillingAccountName || shortProfileId || 'FinOps Hub Scope',
-          currency,
-          savingsPlanPriceRows: Number(span.SavingsPlanPriceRows || 0)
-        };
-
-        const [inventoryRows, covRows, hourlyRows] = await Promise.all([
-          runKusto(buildInventoryQuery(shortProfileId, currency, period.startDate, period.start7d, period.endDate)),
-          runKusto(coverageQuery(shortProfileId, currency, period)),
-          runKusto(buildHourlySimulationQuery(shortProfileId, currency, period.start60d, period.endDate))
-        ]);
-
-        const { plans, summary } = normalizeInventory(inventoryRows, scopeInfo);
-        const coverage = normalizeCoverage(covRows, period, summary);
-
-        state.hourlyRows = hourlyRows;
-        state.data = {
-          generatedAt: new Date().toISOString(),
-          scope: scopeInfo,
-          period,
-          summary,
-          plans,
-          coverage,
-          recommendations: []
-        };
-
-        populateSubscriptionSelector(coverage.bySubAccount);
-        rebuildRecommendations();
-        renderHeaderAndKpis();
-        renderInventoryTable();
-        renderCoverageSection();
-        syncControlButtons();
-        renderSimulator();
-      } catch (err) {
-        errEl.textContent = `Error loading Savings Plans Live Report: ${err.message || err}`;
-        errEl.style.display = 'block';
-      }
-    }
-
-    bindControls();
-    loadDashboard();
+    byId("refresh").addEventListener("click", refresh);
+    refresh();
   </script>
 </body>
 </html>
