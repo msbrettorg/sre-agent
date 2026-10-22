@@ -2,11 +2,26 @@
 
 Deploy an Azure SRE Agent for FinOps Hubs cost analytics and FinOps operations.
 
+## Deployment guide
+
+Use the [recipe deployment guide](../../recipes/finops-hubs/README.md) for:
+
+- [Expected output and what each success marker proves](../../recipes/finops-hubs/README.md#expected-deployment-output)
+- [Data-plane deployment limitations](../../recipes/finops-hubs/README.md#cloud-shell-data-plane-token-failure)
+- [Existing-agent parameters and update limitations](../../recipes/finops-hubs/README.md#deploy-to-an-existing-sre-agent)
+- [Private-network configuration and prerequisites](../../recipes/finops-hubs/README.md#private-networking)
+- [Deployment without a Hub and all 19 task limitations](../../recipes/finops-hubs/README.md#deploy-without-a-finops-hub)
+
+The complete FinOps Hubs recipe still requires a Hub. No-Hub and private-network
+guidance doesn't add new connectors, integrations, or networking infrastructure.
+
 ## Prerequisites
 
 - A deployed FinOps Hub with an Azure Data Explorer endpoint
 - At least one Azure resource group to monitor
-- All [CLI tools](../../README.md#prerequisites) installed
+- PowerShell 7+, the `Az.Accounts` and `Az.Resources` modules, and the Bicep CLI
+- An existing authenticated Az PowerShell context for the deployment subscription,
+  with permission to deploy resources and create role assignments
 - A Microsoft Teams account for post-deployment connector authorization
 - SRE Agent Author or Administrator access to install public marketplace plugins
 - Reader access for the agent identity on every subscription assessed for quota,
@@ -14,25 +29,41 @@ Deploy an Azure SRE Agent for FinOps Hubs cost analytics and FinOps operations.
 
 ## Quick Start
 
-Generate an agent configuration:
+Run these commands **in PowerShell 7+ from `sreagent-templates/`**, not from this
+README's directory. Replace the placeholders with your subscription, agent
+identity, and workload resource groups.
 
-```bash
-./bin/new-agent.sh --recipe finops-hubs --non-interactive \
-  --set agentName=finops-hubs-sre \
-  --set resourceGroup=finops-hubs-sre \
-  --set location=eastus2 \
-  --set targetRGs=finops-hubs-demo \
-  --set finopsHubClusterUri=https://example.westus.kusto.windows.net/Hub \
-  -o agents/finops-hubs/
+```powershell
+./bin/ps/Deploy-Agent.ps1 -InputPath agents/finops-hubs/ `
+  -SubscriptionId '<subscription-id>' `
+  -AgentName '<agent-name>' `
+  -ResourceGroup '<agent-resource-group>' `
+  -Location 'eastus2' `
+  -TargetResourceGroups @('<target-resource-group-1>', '<target-resource-group-2>') `
+  -KustoClusterUrl 'https://<cluster>.<region>.kusto.windows.net' `
+  -KustoDatabase 'Hub'
 ```
 
-Deploy the generated configuration:
+Use `@('rg-one', 'rg-two')` for multiple resource groups; `'rg-one,rg-two'`
+is one string, not two groups. Run the script inside PowerShell rather than
+passing an array through `pwsh -File` from Bash.
 
-```bash
-./bin/deploy.sh agents/finops-hubs/
-```
+The script uses `agent.json` and `connectors.json` in the input directory.
+Command-line identity and targeting values override `agent.json`. It uses an
+already available Az context for `-SubscriptionId`; it doesn't sign in or switch
+the saved context. Without a subscription argument, it uses
+`identity.subscription` when set, otherwise the current context.
+
+**This command deploys infrastructure and ARM connectors only.** It calls
+`New-AzSubscriptionDeployment` with `bicep/main.bicep`; it doesn't assemble or
+apply skills, subagents, tools, tasks, plugins, knowledge, Teams authorization,
+or tool policies. The former generator, apply-extras, and verification scripts
+aren't present in this checkout. Don't treat ARM success as full recipe readiness.
 
 ## Post-deployment setup
+
+The setup below describes the full recipe's requirements. The current deployer
+doesn't install its data-plane assets or Teams connector.
 
 Complete the interactive OAuth authorization for Microsoft Teams after every
 new deployment.
@@ -54,25 +85,34 @@ the ARM MCP endpoint as its data source and requests an `AzureARM` token for
 `https://mcp.management.azure.com/.default`. It does not require interactive user
 authentication or stored credentials.
 
-### Set up the FinOps Hub Live Report
+### Set up the FinOps Hub Live Reports
 
-See the [Live Report README](live-reports/README.md) for preparation, manual
-upload, and local live-data preview instructions.
+See the [Live Reports README](live-reports/README.md) for preparation, manual
+upload, and local live-data preview instructions for both
+`FinOps-Hub-MTD-KPI-Cockpit.html` and `FinOps-Hub-Savings-Plans.html`.
 
 ## Parameters
 
 | Parameter | Required | Description |
 |---|---|---|
-| `agentName` | Yes | Lowercase Azure SRE Agent name |
-| `resourceGroup` | Yes | Resource group for the agent |
-| `location` | Yes | Supported Azure SRE Agent region |
-| `targetRGs` | Yes | Comma-separated resource groups to monitor |
-| `finopsHubClusterUri` | Yes | FinOps Hub Kusto cluster URI, including the `Hub` database |
-| `existingUamiId` | No | Existing user-assigned managed identity resource ID |
-| `modelProvider` | No | `Anthropic` or `Azure OpenAI` |
-| `existingAgentAppInsightsId` | No | Existing Application Insights resource ID for agent telemetry |
+| `-InputPath` | No | Config directory; defaults to this checked-in `agents/finops-hubs` directory, independent of the caller's directory |
+| `-SubscriptionId` | No | Deployment subscription; overrides `agent.json.identity.subscription` |
+| `-AgentName` | No | Overrides `identity.agentName`; fallback is `finops-hubs-sre` |
+| `-ResourceGroup` | No | Overrides `identity.resourceGroup`; fallback is the effective agent name |
+| `-Location` | No | Overrides `identity.location`; fallback is `eastus2`. Supported: `eastus2`, `swedencentral`, `uksouth`, `australiaeast` |
+| `-TargetResourceGroups` | No | PowerShell string array; replaces the complete `identity.targetResourceGroups` list |
+| `-KustoClusterUrl` | For Hub access | Overrides Kusto connector URLs; falls back to `KUSTO_CLUSTER_URI`. An unresolved Hub placeholder is skipped with a warning |
+| `-KustoDatabase` | No | Defaults to `Hub` for a cluster-only URL. A URL database path is preserved unless this parameter is explicit |
+| `-DeploymentName` | No | ARM deployment name; defaults to `sre-agent-yyyyMMdd-HHmmss` |
+
+`existingUamiId`, `existingAgentAppInsightsId`, and `defaultModelProvider` are
+`agent.json` fields, not script parameters. The current script doesn't support
+`-Force`, `-DryRun`, or `-WhatIf`, and it doesn't read `connectors.secrets.env`.
 
 ## What You Get
+
+The table describes the full recipe assets in this directory, not everything
+installed by the current ARM-only deployment command.
 
 | Category | Items |
 |---|---|
