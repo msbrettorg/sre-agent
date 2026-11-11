@@ -151,11 +151,13 @@ check "Incident platform" "$(echo "$PROPS" | jq -r '.incidentPlatform')" "$(exp 
 if [[ -n "$EXPECTED_CONFIG" ]] && printf '%s' "$EXPECTED_CONFIG" | jq -e 'has("customInstructions")' >/dev/null; then
   CUSTOM_STATUS="mismatch"
   if CUSTOM_RESPONSE=$(curl -fsS "$ENDPOINT/api/v2/agent/customInstructions" -H "Authorization: Bearer ${TOKEN}" 2>/dev/null) &&
-      jq -en --argjson expected "$EXPECTED_CONFIG" --argjson actual "$CUSTOM_RESPONSE" '
+      printf '%s\n%s\n' "$EXPECTED_CONFIG" "$CUSTOM_RESPONSE" | jq -es '
         def normalize: gsub("\r\n?"; "\n") | gsub("^\\s+|\\s+$"; "");
-        ($expected.customInstructions | type) == "string" and
-        ($actual.instructions | type) == "string" and
-        (($expected.customInstructions | normalize) == ($actual.instructions | normalize))
+        length == 2 and
+        (.[0] as $expected | .[1] as $actual |
+          ($expected.customInstructions | type) == "string" and
+          ($actual.instructions | type) == "string" and
+          (($expected.customInstructions | normalize) == ($actual.instructions | normalize)))
       ' >/dev/null 2>&1; then
     CUSTOM_STATUS="match"
   fi
