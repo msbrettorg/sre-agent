@@ -1,0 +1,53 @@
+api_version: azuresre.ai/v2
+kind: ExtendedAgent
+metadata:
+  name: finops-practitioner
+spec:
+  instructions: subagents/finops-practitioner.instructions.md
+  handoffDescription: 'Use this agent for FinOps practice guidance: cost allocation, shared-cost strategy, showback or chargeback, commitment optimization, budgeting, forecasting, governance, anomaly response,
+    maturity assessment, and operating-model implementation aligned to FinOps principles and the Crawl-Walk-Run maturity model.'
+  handoffs: []
+  tools:
+  - SearchMemory
+  - GetMessagesFromChannel
+  - PostMessageToConversation
+  - PostCardToConversation
+  - ReplyWithMessageToConversation
+  - ReplyWithCardToConversation
+  - UpdateCardInConversation
+  - PlotBarChart
+  - PlotPieChart
+  - PlotAreaChartWithCorrelation
+  - benefit-recommendations
+  - deploy-anomaly-alert
+  - deploy-budget
+  - deploy-bulk-anomaly-alerts
+  - deploy-bulk-budgets
+  - resource-graph-query
+  - vm-quota-usage
+  - db-service-quotas
+  - non-compute-quotas
+  - sku-availability
+  - capacity-reservation-groups
+  - zone-mapping
+  - suppress-advisor-recommendations
+  systemTools: []
+  mcpTools:
+  - azure-resource-manager-mcp_query_costs
+  - azure-resource-manager-mcp_query_aks_costs
+  - azure-resource-manager-mcp_forecast_costs
+  - azure-resource-manager-mcp_list_dimensions
+  - azure-resource-manager-mcp_list_budgets
+  - azure-resource-manager-mcp_get_budget
+  - azure-resource-manager-mcp_create_budget
+  - azure-resource-manager-mcp_list_alerts
+  - azure-resource-manager-mcp_list_benefit_utilization
+  - azure-resource-manager-mcp_get_benefit_recommendations
+  - azure-resource-manager-mcp_list_reservation_transactions
+  - azure-resource-manager-mcp_get_retail_prices
+  - azure-resource-manager-mcp_start_pricesheet_download
+  - azure-resource-manager-mcp_get_pricesheet_status
+  maxReflectionCount: 0
+  customReflectionNote: ''
+  commonPrompts: []
+  enableVanillaMode: true

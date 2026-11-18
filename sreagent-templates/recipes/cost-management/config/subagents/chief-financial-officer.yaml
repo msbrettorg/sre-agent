@@ -1,0 +1,16 @@
+api_version: azuresre.ai/v2
+kind: ExtendedAgent
+metadata:
+  name: chief-financial-officer
+spec:
+  instructions: subagents/chief-financial-officer.instructions.md
+  handoffDescription: Executive financial strategy and FinOps leadership for budgeting, forecasting, risk, capital allocation, and cost optimization.
+  handoffs: []
+  tools:
+  - SearchMemory
+  systemTools: []
+  mcpTools: []
+  maxReflectionCount: 0
+  customReflectionNote: ''
+  commonPrompts: []
+  enableVanillaMode: true
